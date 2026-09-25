@@ -1,4 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app'
+import { getAuth, signInAnonymously } from 'firebase/auth'
 import { getDatabase } from 'firebase/database'
 
 const firebaseConfig = {
@@ -13,8 +14,14 @@ const firebaseConfig = {
 }
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
-
+export const firebaseApp = app
+export const auth = getAuth(app)
 export const realtimeDatabase = getDatabase(app)
-export { app as firebaseApp }
+
+export async function ensureAnonymousSession() {
+  if (auth.currentUser) return auth.currentUser
+  const result = await signInAnonymously(auth)
+  return result.user
+}
 
 export default app

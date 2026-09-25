@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { push, ref, set } from 'firebase/database'
 import Logo, { Icon } from '../components/Logo'
+import { realtimeDatabase } from '../lib/firebase'
 
 interface Props {
   onCreateRoom: () => void
@@ -7,6 +9,7 @@ interface Props {
   onBack: () => void
   darkMode: boolean
   onToggleDark: () => void
+  userId: string | null
 }
 
 const RECENT_ROOMS = [
@@ -14,7 +17,7 @@ const RECENT_ROOMS = [
   { title: 'The Grand Budapest Hotel', detail: 'A room from 1 week ago', code: 'MN7Q' },
 ]
 
-export default function CreateRoom({ onCreateRoom, onJoinRoom, onBack, darkMode, onToggleDark }: Props) {
+export default function CreateRoom({ onCreateRoom, onJoinRoom, onBack, darkMode, onToggleDark, userId }: Props) {
   const [tab, setTab] = useState<'create' | 'join'>('create')
   const [url, setUrl] = useState('')
   const [code, setCode] = useState('')
@@ -23,13 +26,16 @@ export default function CreateRoom({ onCreateRoom, onJoinRoom, onBack, darkMode,
   const surface = darkMode ? 'bg-night text-ivory' : 'bg-ivory text-ink'
   const muted = darkMode ? 'text-ivory/60' : 'text-muted-ink'
 
-  const handleSubmit = () => {
-    if (submitted) return
+  const handleSubmit = async () => {
+    if (submitted || !userId) return
     setSubmitted(true)
-    window.setTimeout(() => {
-      if (tab === 'create') onCreateRoom()
-      else onJoinRoom()
-    }, 600)
+    const roomCode = tab === 'join' ? code.trim().toUpperCase() : Math.random().toString(36).slice(2, 8).toUpperCase()
+    if (tab === 'create') {
+      await set(ref(realtimeDatabase, `rooms/${roomCode}`), { title: 'Datecue room', movieUrl: url.trim(), createdAt: Date.now(), members: { [userId]: true } })
+    } else {
+      await set(ref(realtimeDatabase, `rooms/${roomCode}/members/${userId}`), true)
+    }
+    window.setTimeout(() => tab === 'create' ? onCreateRoom(roomCode) : onJoinRoom(roomCode), 300)
   }
 
   return (

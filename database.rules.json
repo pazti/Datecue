@@ -1,0 +1,35 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+        ".write": "auth != null && ((!data.exists() && newData.child('members').child(auth.uid).exists()) || data.child('members').child(auth.uid).exists())",
+        "members": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid && (!data.exists() || data.val() === true)",
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
+        },
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['uid', 'text', 'createdAt']) && newData.child('uid').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500 && newData.child('createdAt').isNumber()"
+          }
+        },
+        "presence": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid",
+            ".validate": "newData.hasChildren(['online', 'updatedAt']) && newData.child('online').isBoolean() && newData.child('updatedAt').isNumber()"
+          }
+        },
+        "typing": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid",
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      }
+    }
+  }
+}

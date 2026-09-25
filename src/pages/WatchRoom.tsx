@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { onDisconnect, onValue, ref, set } from 'firebase/database'
 import Logo, { Icon } from '../components/Logo'
+import { realtimeDatabase } from '../lib/firebase'
 
 interface ChatMsg {
   id: string
@@ -19,6 +21,8 @@ interface Props {
   onLeave: () => void
   darkMode: boolean
   onToggleDark: () => void
+  roomId?: string
+  userId?: string | null
 }
 
 const ROOM_CODE = 'XK4P2R'
@@ -43,7 +47,7 @@ function formatDuration(seconds: number) {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
 }
 
-export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
+export default function WatchRoom({ onLeave, darkMode, onToggleDark, roomId = ROOM_CODE, userId }: Props) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoTime, setVideoTime] = useState(692)
   const [videoProgress, setVideoProgress] = useState(692 / 6240)
@@ -69,6 +73,26 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
   const hideControlsRef = useRef<number | null>(null)
   const videoTimeRef = useRef(videoTime)
   videoTimeRef.current = videoTime
+
+  useEffect(() => {
+    if (!userId) return
+    const presenceRef = ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)
+    set(presenceRef, { online: true, updatedAt: Date.now() })
+    onDisconnect(presenceRef).set({ online: false, updatedAt: Date.now() })
+    return onValue(ref(realtimeDatabase, `rooms/${roomId}/presence`), snapshot => {
+      const presence = snapshot.val() as Record<string, { online?: boolean }> | null
+      setPartnerOnline(Object.entries(presence ?? {}).some(([id, value]) => id !== userId && value.online === true))
+    })
+  }, [roomId, userId])
+
+  useEffect(() => {
+    const messagesRef = ref(realtimeDatabase, `rooms/${roomId}/messages`)
+    return onValue(messagesRef, snapshot => {
+      const remote = snapshot.val() as Record<string, { uid: string; text: string; createdAt: number }> | null
+      if (!remote) return
+      setMessages(Object.entries(remote).sort((a, b) => a[1].createdAt - b[1].createdAt).map(([id, message]) => ({ id, sender: message.uid === userId ? 'me' : 'partner', text: message.text, videoTs: formatTime(videoTimeRef.current), wallTime: new Date(message.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) })))
+    })
+  }, [roomId, userId])
 
   const surface = darkMode ? 'bg-night text-ivory' : 'bg-ivory text-ink'
   const panel = darkMode ? 'bg-night-card' : 'bg-paper'
@@ -120,6 +144,8 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
 
   const sendMessage = useCallback(() => {
     if (!inputText.trim()) return
+    const text = inputText.trim()
+    if (userId) void push(ref(realtimeDatabase, `rooms/${roomId}/messages`), { uid: userId, text, createdAt: Date.now() })
     setMessages(current => [...current, {
       id: Date.now().toString(),
       sender: 'me',
@@ -134,6 +160,7 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
     const id = `${Date.now()}-${Math.random()}`
     setFloatingReactions(current => [...current, { id, emoji, x: 14 + Math.random() * 72 }])
     window.setTimeout(() => setFloatingReactions(current => current.filter(item => item.id !== id)), 3000)
+    if (userId) void push(ref(realtimeDatabase, `rooms/${roomId}/messages`), { uid: userId, text: emoji, createdAt: Date.now() })
     setMessages(current => [...current, { id, sender: 'me', text: emoji, videoTs: formatTime(videoTime), wallTime: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }])
     setShowPicker(false)
   }, [videoTime])
