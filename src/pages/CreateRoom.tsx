@@ -4,8 +4,8 @@ import Logo, { Icon } from '../components/Logo'
 import { realtimeDatabase } from '../lib/firebase'
 
 interface Props {
-  onCreateRoom: () => void
-  onJoinRoom: () => void
+  onCreateRoom: (roomId: string, movieUrl: string) => void
+  onJoinRoom: (roomId: string) => void
   onBack: () => void
   darkMode: boolean
   onToggleDark: () => void
@@ -27,15 +27,19 @@ export default function CreateRoom({ onCreateRoom, onJoinRoom, onBack, darkMode,
   const muted = darkMode ? 'text-ivory/60' : 'text-muted-ink'
 
   const handleSubmit = async () => {
-    if (submitted || !userId) return
-    setSubmitted(true)
+    if (submitted) return
     const roomCode = tab === 'join' ? code.trim().toUpperCase() : Math.random().toString(36).slice(2, 8).toUpperCase()
-    if (tab === 'create') {
-      await set(ref(realtimeDatabase, `rooms/${roomCode}`), { title: 'Datecue room', movieUrl: url.trim(), createdAt: Date.now(), members: { [userId]: true } })
-    } else {
-      await set(ref(realtimeDatabase, `rooms/${roomCode}/members/${userId}`), true)
+    if (!roomCode || (tab === 'create' && !url.trim())) return
+    setSubmitted(true)
+    try {
+      if (userId) {
+        if (tab === 'create') await set(ref(realtimeDatabase, `rooms/${roomCode}`), { title: 'Datecue room', movieUrl: url.trim(), createdAt: Date.now(), members: { [userId]: true } })
+        else await set(ref(realtimeDatabase, `rooms/${roomCode}/members/${userId}`), true)
+      }
+      tab === 'create' ? onCreateRoom(roomCode, url.trim()) : onJoinRoom(roomCode)
+    } catch {
+      setSubmitted(false)
     }
-    window.setTimeout(() => tab === 'create' ? onCreateRoom(roomCode) : onJoinRoom(roomCode), 300)
   }
 
   return (
@@ -103,7 +107,7 @@ export default function CreateRoom({ onCreateRoom, onJoinRoom, onBack, darkMode,
             <div className="mb-3 flex items-center justify-between"><p className={`mono text-[10px] uppercase tracking-[.18em] ${muted}`}>Recent rooms</p><span className={`text-xs ${muted}`}>Demo history</span></div>
             <div className="space-y-2">
               {RECENT_ROOMS.map(room => (
-                <button className={`button-quiet focus-ring flex w-full items-center gap-3 rounded-xl border hairline px-4 py-3 text-left`} key={room.code} onClick={onCreateRoom}>
+                <button className={`button-quiet focus-ring flex w-full items-center gap-3 rounded-xl border hairline px-4 py-3 text-left`} key={room.code} onClick={() => onCreateRoom(Math.random().toString(36).slice(2, 8).toUpperCase(), url.trim())}>
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-coral/10 text-coral"><Icon name="film" size={16} /></span>
                   <span className="min-w-0 flex-1"><span className={`block truncate text-sm font-bold ${darkMode ? 'text-ivory' : 'text-ink'}`}>{room.title}</span><span className={`block text-xs ${muted}`}>{room.detail}</span></span>
                   <span className={`mono rounded-md border px-2 py-1 text-[10px] tracking-[.15em] ${darkMode ? 'border-ivory/15 text-ivory/70' : 'border-ink/15 text-muted-ink'}`}>{room.code}</span>

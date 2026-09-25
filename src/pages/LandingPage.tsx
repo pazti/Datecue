@@ -4,6 +4,7 @@ import { Icon } from '../components/Logo'
 
 interface Props {
   onGetStarted: () => void
+  onLogin: () => void
   darkMode: boolean
   onToggleDark: () => void
 }
@@ -63,7 +64,7 @@ function PhonePreview({ darkMode }: { darkMode: boolean }) {
   )
 }
 
-export default function LandingPage({ onGetStarted, darkMode, onToggleDark }: Props) {
+export default function LandingPage({ onGetStarted, onLogin, darkMode, onToggleDark }: Props) {
   const [url, setUrl] = useState('')
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -83,7 +84,7 @@ export default function LandingPage({ onGetStarted, darkMode, onToggleDark }: Pr
           <button aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border hairline" onClick={onToggleDark}>
             <Icon name={darkMode ? 'sun' : 'moon'} size={17} />
           </button>
-          <button className="button-dark focus-ring hidden rounded-full px-5 py-2.5 text-sm font-bold sm:block" onClick={onGetStarted}>Open a room</button>
+          <div className="flex items-center gap-2"><button className="button-quiet focus-ring rounded-full px-4 py-2.5 text-sm font-bold" onClick={onLogin}>Log in</button><button className="button-dark focus-ring hidden rounded-full px-5 py-2.5 text-sm font-bold sm:block" onClick={onGetStarted}>Open a room</button></div>
         </div>
       </nav>
 

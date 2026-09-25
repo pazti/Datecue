@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
-import { onDisconnect, onValue, ref, set } from 'firebase/database'
+import { onDisconnect, onValue, push, ref, set } from 'firebase/database'
 import Logo, { Icon } from '../components/Logo'
 import { realtimeDatabase } from '../lib/firebase'
 
@@ -22,6 +22,7 @@ interface Props {
   darkMode: boolean
   onToggleDark: () => void
   roomId?: string
+  movieUrl?: string
   userId?: string | null
 }
 
@@ -47,7 +48,8 @@ function formatDuration(seconds: number) {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
 }
 
-export default function WatchRoom({ onLeave, darkMode, onToggleDark, roomId = ROOM_CODE, userId }: Props) {
+export default function WatchRoom({ onLeave, darkMode, onToggleDark, roomId = ROOM_CODE, movieUrl, userId }: Props) {
+  const youtubeId = movieUrl?.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([^?&/]+)/)?.[1]
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoTime, setVideoTime] = useState(692)
   const [videoProgress, setVideoProgress] = useState(692 / 6240)
@@ -254,11 +256,10 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark, roomId = RO
 
       <div className="flex min-h-[calc(100dvh-68px)] flex-col lg:flex-row">
         <section className="relative flex min-h-[52dvh] flex-1 flex-col overflow-hidden bg-[#102028]" onMouseMove={revealControls} onClick={() => showPicker && setShowPicker(false)} ref={videoAreaRef}>
-          <div className="movie-surface absolute inset-0">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_32%,rgba(5,12,15,.7)_100%)]" />
-            <div className="absolute inset-x-0 top-0 h-[7%] bg-[#091115]" />
-            <div className="absolute inset-x-0 bottom-0 h-[10%] bg-[#091115]" />
-          </div>
+          {youtubeId ? <iframe className="absolute inset-0 z-[1] h-full w-full" src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=0&rel=0`} title="Room film" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /> : <div className="movie-surface absolute inset-0" />}
+          <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_32%,rgba(5,12,15,.7)_100%)]" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[7%] bg-[#091115]" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-[10%] bg-[#091115]" />
           <div className="absolute left-5 right-5 top-7 z-10 flex items-start justify-between sm:left-9 sm:right-9 sm:top-10">
             <div><p className="mono text-[9px] uppercase tracking-[.22em] text-ivory/55">now playing</p><h1 className="mt-1 text-2xl text-ivory sm:text-3xl">Spirited Away</h1><p className="mt-1 text-xs text-ivory/55">Hayao Miyazaki · 2001</p></div>
             <div className="rounded-full border border-ivory/20 bg-navy/30 px-3 py-1.5 text-[10px] text-ivory/70 backdrop-blur-sm"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-moss" />datecue live</div>
