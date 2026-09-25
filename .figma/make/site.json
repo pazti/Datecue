@@ -1,0 +1,10 @@
+{
+  "description": "Enables couples to watch YouTube videos together remotely with synchronized playback, live chat, and animated emoji reactions for a cozy shared experience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
