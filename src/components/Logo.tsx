@@ -30,7 +30,7 @@ export default function Logo({ dark = false, compact = false, className = '' }: 
       <LogoMark dark={dark} />
       {!compact && (
         <span className={`display-serif text-[22px] leading-none ${dark ? 'text-ivory' : 'text-ink'}`}>
-          Together
+          Datecue
         </span>
       )}
     </span>

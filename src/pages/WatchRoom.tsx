@@ -139,7 +139,7 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
   }, [videoTime])
 
   const copyLink = () => {
-    navigator.clipboard?.writeText(`https://together.app/room/${ROOM_CODE}`).catch(() => undefined)
+    navigator.clipboard?.writeText(`https://datecue.app/room/${ROOM_CODE}`).catch(() => undefined)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2200)
   }
@@ -180,7 +180,7 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
       </div>
 
       <div className={`grid grid-cols-3 gap-2 border-b px-4 py-4 ${border}`}>
-        {[['Together', formatDuration(togetherTime), 'bg-coral text-ivory'], ['You', formatDuration(myTime), soft], ['Alex', formatDuration(partnerTime), soft]].map(([label, value, color]) => (
+        {[['Shared', formatDuration(togetherTime), 'bg-coral text-ivory'], ['You', formatDuration(myTime), soft], ['Alex', formatDuration(partnerTime), soft]].map(([label, value, color]) => (
           <div className={`rounded-xl border p-2 text-center ${border} ${color}`} key={label}><p className="mono text-[9px] uppercase tracking-tight opacity-70">{label}</p><p className="mt-1 text-sm font-bold">{value}</p></div>
         ))}
       </div>
@@ -234,7 +234,7 @@ export default function WatchRoom({ onLeave, darkMode, onToggleDark }: Props) {
           </div>
           <div className="absolute left-5 right-5 top-7 z-10 flex items-start justify-between sm:left-9 sm:right-9 sm:top-10">
             <div><p className="mono text-[9px] uppercase tracking-[.22em] text-ivory/55">now playing</p><h1 className="mt-1 text-2xl text-ivory sm:text-3xl">Spirited Away</h1><p className="mt-1 text-xs text-ivory/55">Hayao Miyazaki · 2001</p></div>
-            <div className="rounded-full border border-ivory/20 bg-navy/30 px-3 py-1.5 text-[10px] text-ivory/70 backdrop-blur-sm"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-moss" />together</div>
+            <div className="rounded-full border border-ivory/20 bg-navy/30 px-3 py-1.5 text-[10px] text-ivory/70 backdrop-blur-sm"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-moss" />datecue live</div>
           </div>
           <div className={`absolute inset-0 z-10 flex items-center justify-center transition-opacity ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
             <button aria-label={isPlaying ? 'Pause film' : 'Play film'} className="button-primary flex h-16 w-16 items-center justify-center rounded-full border-2 border-ivory/60 bg-coral/90 text-ivory shadow-2xl sm:h-20 sm:w-20" onClick={() => setIsPlaying(value => !value)}><Icon name={isPlaying ? 'pause' : 'play'} size={isPlaying ? 24 : 28} /></button>

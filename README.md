@@ -1,6 +1,10 @@
-# Together
+# Datecue
 
-Together is a polished frontend prototype for private watch parties. It gives two people a shared cinema for synchronized video, timestamped chat, and lightweight reactions.
+Datecue is a polished frontend prototype for private watch parties.
+
+**Same movie. Same second. Same reactions.**
+
+It gives two people a shared cinema for synchronized video, timestamped chat, and lightweight reactions.
 
 This repository currently contains the complete frontend experience. The product is intentionally ready for a backend connection later; demo state is local to the browser session and no backend services are included.
 
@@ -43,7 +47,7 @@ Recommended backend responsibilities:
 
 ```text
 src/
-  components/Logo.tsx       # Together mark and shared line icons
+  components/Logo.tsx       # Datecue mark and shared line icons
   pages/LandingPage.tsx     # Marketing / entry experience
   pages/CreateRoom.tsx      # Create and join flow
   pages/WatchRoom.tsx       # Watch party experience
@@ -53,7 +57,7 @@ src/
 
 ## Design direction
 
-The visual system is cinematic editorial intimacy: warm ivory, coral, navy, and moss; Fraunces for display moments; DM Sans for interface copy; and Space Mono for room metadata. The logo is implemented as a reusable React component in `src/components/Logo.tsx`.
+The visual system is cinematic editorial intimacy: warm ivory, coral, navy, and moss; Fraunces for display moments; DM Sans for interface copy; and Space Mono for room metadata. The Datecue logo is implemented as a reusable React component in `src/components/Logo.tsx`.
 
 ## GitHub
 
@@ -61,7 +65,7 @@ To publish this project to your GitHub repository:
 
 ```bash
 git add .
-git commit -m "Build Together watch party frontend"
+git commit -m "Build Datecue watch party frontend"
 git remote add origin https://github.com/<your-account>/<your-repository>.git
 git push -u origin main
 ```

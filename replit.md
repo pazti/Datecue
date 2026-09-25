@@ -1,8 +1,12 @@
-# Together frontend handoff
+# Datecue frontend handoff
 
 ## Current scope
 
-Together is a frontend-only watch-party experience. The screens and interactions are intentionally usable with local demo state while the backend is being built separately.
+Datecue is a frontend-only watch-party experience.
+
+**Same movie. Same second. Same reactions.**
+
+The screens and interactions are intentionally usable with local demo state while the backend is being built separately.
 
 The current workflow is:
 
@@ -55,7 +59,7 @@ Playback events should include an event timestamp and the current video time so 
 
 ## UI conventions
 
-- Keep the Together logo in `src/components/Logo.tsx` rather than recreating it per page.
+- Keep the Datecue logo in `src/components/Logo.tsx` rather than recreating it per page.
 - Use the shared color tokens and font classes from `src/index.css`.
 - Preserve keyboard focus states, labels, `aria-label`s, and reduced-motion support.
 - Keep the primary brand/navigation UI free of emoji dependencies; reactions inside the watch room can remain expressive.

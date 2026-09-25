@@ -95,7 +95,7 @@ export default function LandingPage({ onGetStarted, darkMode, onToggleDark }: Pr
               The best part is <em className="text-coral">who’s there.</em>
             </h1>
             <p className={`mt-8 max-w-xl text-lg leading-relaxed ${muted} sm:text-xl`}>
-              A private cinema for the people you miss. Share a film, stay in sync, and make the distance feel a little smaller.
+              Same movie. Same second. Same reactions. Datecue is a private cinema for the people you miss.
             </p>
             <div className="mt-9 max-w-xl">
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -171,8 +171,8 @@ export default function LandingPage({ onGetStarted, darkMode, onToggleDark }: Pr
       <footer className="border-t hairline px-5 py-7 sm:px-8 lg:px-12">
         <div className={`mx-auto flex max-w-7xl flex-col gap-3 text-xs ${muted} sm:flex-row sm:items-center sm:justify-between`}>
           <Logo compact dark={darkMode} />
-          <span>Made for the people you’d rather be watching with.</span>
-          <span className="mono text-[10px] uppercase tracking-[.15em]">Together / 2024</span>
+              <span>Made for the people you’d rather be watching with.</span>
+              <span className="mono text-[10px] uppercase tracking-[.15em]">Datecue / 2024</span>
         </div>
       </footer>
     </div>
