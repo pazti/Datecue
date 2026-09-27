@@ -1,20 +1,29 @@
 import { useEffect, useState } from 'react'
 import { onValue, ref } from 'firebase/database'
+import { formatDuration, realtimeDatabase } from '../lib/firebase'
 import Logo, { Icon } from '../components/Logo'
-import { realtimeDatabase } from '../lib/firebase'
 
-interface Props { userId: string; onCreate: () => void; onJoin: () => void; onLogout: () => void; darkMode: boolean; onToggleDark: () => void }
-export default function HomePage({ userId, onCreate, onJoin, onLogout, darkMode, onToggleDark }: Props) {
-  const [stats, setStats] = useState({ watchTime: 0, rooms: 0, messages: 0 })
-  const muted = darkMode ? 'text-ivory/60' : 'text-muted-ink'
+interface Props { userId: string; darkMode: boolean; onToggleDark: () => void; onCreate: () => void; onJoin: () => void; onLogout: () => void }
+interface HistoryItem { roomId: string; movieUrl: string; title?: string; watchedSeconds?: number; updatedAt?: number }
+
+export default function HomePage({ userId, darkMode, onToggleDark, onCreate, onJoin, onLogout }: Props) {
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [totalSeconds, setTotalSeconds] = useState(0)
+  const [notifications, setNotifications] = useState<Record<string, { title: string; body: string; read?: boolean }>>({})
+  useEffect(() => onValue(ref(realtimeDatabase, `users/${userId}`), snapshot => {
+    const value = snapshot.val() ?? {}
+    setTotalSeconds(value.stats?.watchSeconds ?? 0)
+    setHistory(Object.entries(value.history ?? {}).map(([roomId, item]) => ({ roomId, ...(item as Omit<HistoryItem, 'roomId'>) })).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, 8))
+    setNotifications(value.notifications ?? {})
+  }), [userId])
+  const unread = Object.values(notifications).filter(item => !item.read).length
   const surface = darkMode ? 'bg-night text-ivory' : 'bg-ivory text-ink'
-  useEffect(() => onValue(ref(realtimeDatabase, `users/${userId}/stats`), snap => setStats({ watchTime: snap.val()?.watchTime ?? 0, rooms: snap.val()?.rooms ?? 0, messages: snap.val()?.messages ?? 0 })), [userId])
-  const hours = Math.floor(stats.watchTime / 3600); const minutes = Math.floor((stats.watchTime % 3600) / 60)
+  const muted = darkMode ? 'text-ivory/60' : 'text-muted-ink'
   return <div className={`film-grain min-h-[100dvh] ${surface}`}>
-    <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8"><Logo dark={darkMode} /><div className="flex items-center gap-2"><button aria-label="Toggle theme" className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border hairline" onClick={onToggleDark}><Icon name={darkMode ? 'sun' : 'moon'} size={17} /></button><button className="button-quiet focus-ring rounded-full px-3 py-2 text-sm font-bold" onClick={onLogout}>Log out</button></div></header>
-    <main className="mx-auto max-w-5xl px-5 pb-20 pt-10 sm:px-8 sm:pt-16"><p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>your cinema</p><h1 className="mt-4 text-5xl leading-none sm:text-7xl">Welcome back.</h1><p className={`mt-5 max-w-xl text-lg ${muted}`}>Pick a room and make some space for the people you miss.</p>
-      <div className="mt-10 grid gap-3 sm:grid-cols-2"><button className="button-primary focus-ring rounded-2xl p-6 text-left" onClick={onCreate}><span className="block text-xl font-bold">Create a room</span><span className="mt-2 block text-sm text-ivory/75">Choose a YouTube film and invite someone in.</span></button><button className="button-dark focus-ring rounded-2xl p-6 text-left" onClick={onJoin}><span className="block text-xl font-bold">Join a room</span><span className="mt-2 block text-sm text-ivory/70">Enter a room code from your person.</span></button></div>
-      <section className="mt-12"><p className={`mono text-xs uppercase tracking-[.18em] ${muted}`}>your stats</p><div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">{[[`${hours}h ${minutes}m`, 'watch time'], [stats.rooms, 'rooms joined'], [stats.messages, 'messages sent']].map(([value, label]) => <div className="soft-card rounded-2xl p-4 sm:p-6" key={label}><p className="text-xl font-bold sm:text-3xl">{value}</p><p className={`mt-2 text-xs ${muted}`}>{label}</p></div>)}</div></section>
+    <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5"><Logo dark={darkMode}/><div className="flex items-center gap-2"><button className="button-quiet rounded-full border px-3 py-2 text-xs font-bold" onClick={onToggleDark}><Icon name={darkMode ? 'sun' : 'moon'} size={15}/></button><button className="button-quiet rounded-full border px-3 py-2 text-xs font-bold" onClick={onLogout}>Log out</button></div></header>
+    <main className="mx-auto max-w-6xl px-5 pb-16 pt-8"><div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end"><div><p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>your datecue home</p><h1 className="mt-3 text-5xl sm:text-6xl">What are you watching next?</h1></div><div className="flex gap-2"><button className="button-primary rounded-xl px-4 py-3 text-sm font-bold" onClick={onCreate}>Create room</button><button className="button-quiet rounded-xl border px-4 py-3 text-sm font-bold" onClick={onJoin}>Join room</button></div></div>
+      <section className="mt-8 grid gap-3 sm:grid-cols-3"><div className="soft-card rounded-2xl p-5"><p className={`text-xs uppercase ${muted}`}>Total watch time</p><p className="mt-2 text-3xl font-bold">{formatDuration(totalSeconds)}</p></div><div className="soft-card rounded-2xl p-5"><p className={`text-xs uppercase ${muted}`}>Rooms watched</p><p className="mt-2 text-3xl font-bold">{history.length}</p></div><div className="soft-card rounded-2xl p-5"><p className={`text-xs uppercase ${muted}`}>Notifications</p><p className="mt-2 text-3xl font-bold">{unread}</p></div></section>
+      <section className="mt-10"><div className="flex items-center justify-between"><h2 className="text-3xl">Recent rooms</h2><span className={`text-sm ${muted}`}>{history.length ? 'Synced from Firebase' : 'No rooms yet'}</span></div><div className="mt-4 grid gap-3">{history.map(item => <button key={item.roomId} onClick={onJoin} className="soft-card flex w-full items-center justify-between rounded-2xl p-4 text-left"><span><span className="block font-bold">Room {item.roomId}</span><span className={`text-sm ${muted}`}>{formatDuration(item.watchedSeconds ?? 0)} watched</span></span><Icon name="arrow-right" size={18}/></button>)}</div></section>
     </main>
   </div>
 }
