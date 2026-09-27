@@ -33,7 +33,8 @@ react(),
     server: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '5000'),
-      strictPort: true,
+      // Let the preview runner recover if an old Vite process briefly holds the port.
+      strictPort: false,
       watch: {
         ignored: [
           '**/.figma/**',
