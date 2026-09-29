@@ -22,7 +22,7 @@ export default class AppErrorBoundary extends Component<Props, State> {
         <section className="w-full max-w-md rounded-3xl border border-[#17252b]/15 bg-white p-7 shadow-xl dark:border-white/15 dark:bg-[#16242a]">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[#df6b58]">Datecue</p>
           <h1 className="font-serif text-3xl font-bold">Something went wrong</h1>
-          <p className="mt-3 text-sm leading-6 opacity-75">The app hit an unexpected error. Reload the room to reconnect safely.</p>
+          <p className="mt-3 text-sm leading-6 opacity-75">The app hit an unexpected error. Reload Datecue to reconnect safely and return to your room.</p>
           <button className="button-dark mt-6 rounded-full px-5 py-3 text-sm font-bold" onClick={() => window.location.reload()}>Reload Datecue</button>
         </section>
       </main>
