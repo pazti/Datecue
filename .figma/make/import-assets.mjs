@@ -1,16 +1,16 @@
-import { constants, existsSync, readdirSync } from 'node:fs'
-import { copyFile, mkdir } from 'node:fs/promises'
-import path from 'node:path'
+import { constants, existsSync, readdirSync } from "node:fs"
+import { copyFile, mkdir } from "node:fs/promises"
+import path from "node:path"
 
 const projectMetadata = new Set([
-  'npm-shrinkwrap.json',
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
-  'yarn.lock',
-  'bun.lock',
-  'bun.lockb',
-  'agents.md',
-  'claude.md',
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "agents.md",
+  "claude.md",
 ])
 const projectConfiguration =
   /^(?:package(?:-lock)?\.json|(?:tsconfig|jsconfig)(?:\.[^.]+)*\.json|.*\.config\.[^.]+)$/i
@@ -20,14 +20,14 @@ function currentAssets(root, excludedDirectories) {
   function visit(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const filename = path.join(directory, entry.name)
-      if (entry.name.startsWith('.') && entry.name !== '.well-known') continue
+      if (entry.name.startsWith(".") && entry.name !== ".well-known") continue
       if (entry.isDirectory()) {
         if (
           excludedDirectories.has(filename) ||
-          ['node_modules', 'dist', 'build', 'coverage'].includes(entry.name)
+          ["node_modules", "dist", "build", "coverage"].includes(entry.name)
         )
           continue
-        if (existsSync(path.join(filename, 'package.json'))) continue
+        if (existsSync(path.join(filename, "package.json"))) continue
         visit(filename)
       } else if (
         entry.isFile() &&
@@ -47,16 +47,19 @@ export function frontendAssets() {
   let excludedDirectories
   let outDir
   return {
-    name: 'figma-frontend-import-assets',
+    name: "figma-frontend-import-assets",
     config(config) {
-      root = path.resolve(config.root || '.')
-      outDir = path.resolve(root, config.build?.outDir || 'dist')
-      excludedDirectories = new Set([outDir, path.resolve(root, config.publicDir || 'public')])
+      root = path.resolve(config.root || ".")
+      outDir = path.resolve(root, config.build?.outDir || "dist")
+      excludedDirectories = new Set([
+        outDir,
+        path.resolve(root, config.publicDir || "public"),
+      ])
       return {
         build: {
           rollupOptions: {
             input: currentAssets(root, excludedDirectories)
-              .filter((file) => file.endsWith('.html'))
+              .filter((file) => file.endsWith(".html"))
               .map((file) => path.resolve(root, file)),
           },
         },
@@ -72,9 +75,13 @@ export function frontendAssets() {
         const target = path.resolve(outDir, file)
         await mkdir(path.dirname(target), { recursive: true })
         try {
-          await copyFile(path.resolve(root, file), target, constants.COPYFILE_EXCL)
+          await copyFile(
+            path.resolve(root, file),
+            target,
+            constants.COPYFILE_EXCL,
+          )
         } catch (error) {
-          if (error.code !== 'EEXIST') throw error
+          if (error.code !== "EEXIST") throw error
         }
       }
     },
