@@ -104,7 +104,7 @@ export default function LandingPage({ onGetStarted, onLogin, darkMode, onToggleD
                 <input id="landing-url" className="input-field focus-ring rounded-full px-5 py-3.5 text-sm" onChange={e => setUrl(e.target.value)} placeholder="Paste a film link to begin…" type="url" value={url} />
                 <button className="button-primary focus-ring flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold" onClick={onGetStarted}>Create room <Icon name="arrow-right" size={16} /></button>
               </div>
-              <p className={`mt-3 text-xs ${muted}`}>No account needed for the demo. Invite someone in one tap.</p>
+              <p className={`mt-3 text-xs ${muted}`}>Sign in to create a private room. Invite someone in one tap.</p>
             </div>
             <div className={`mt-12 flex items-center gap-3 border-t pt-5 hairline text-sm ${muted}`}>
               <div className="flex -space-x-2" aria-hidden="true">
