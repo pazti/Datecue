@@ -21,6 +21,13 @@
         }
       }
     },
+    "roomDirectory": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.child('hostId').val() == auth.uid",
+        ".validate": "newData.hasChildren(['movieUrl', 'hostId', 'createdAt']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('hostId').isString() && newData.child('hostId').val() == auth.uid && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
+      }
+    },
     "rooms": {
       "$roomId": {
         ".read": false,
