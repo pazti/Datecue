@@ -285,37 +285,34 @@ export default function WatchRoom({
             {playback.playing ? "Playing together" : "Paused together"}
           </div>
           <div className="absolute bottom-4 right-4 z-10">
-            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
-              {REACTIONS.slice(0, 6).map((emoji) => (
-                <button
-                  key={emoji}
-                  aria-label={`React ${emoji}`}
-                  onClick={() => void sendReaction(emoji)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-[22px] transition hover:scale-125 hover:bg-white/10"
-                >
-                  {emoji}
-                </button>
-              ))}
-              <button
-                aria-label="More reactions"
-                onClick={() => setShowReactions((value) => !value)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-2xl text-white/80"
-              >
-                +
-              </button>
-            </div>
-            {showReactions && (
-              <div className="absolute bottom-14 right-0 flex gap-1 rounded-2xl bg-[#25292d]/95 p-2 shadow-2xl">
+            {showReactions ? (
+              <div className="reaction-tray flex items-center gap-1 rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
                 {REACTIONS.map((emoji) => (
                   <button
                     key={emoji}
+                    aria-label={`React ${emoji}`}
                     onClick={() => void sendReaction(emoji)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-xl hover:bg-white/10"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[22px] transition hover:scale-125 hover:bg-white/10"
                   >
                     {emoji}
                   </button>
                 ))}
+                <button
+                  aria-label="Close reactions"
+                  onClick={() => setShowReactions(false)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/80 transition hover:bg-white/25"
+                >
+                  ×
+                </button>
               </div>
+            ) : (
+              <button
+                aria-label="Open reactions"
+                onClick={() => setShowReactions(true)}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#25292d]/95 text-2xl text-white shadow-2xl backdrop-blur-md transition hover:scale-105"
+              >
+                +
+              </button>
             )}
           </div>
           {latestReactions.map((reaction) => (

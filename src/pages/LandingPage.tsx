@@ -32,7 +32,7 @@ const FEATURES = [
 
 function PhonePreview({ darkMode }: { darkMode: boolean }) {
   return (
-    <div className="relative mx-auto w-full max-w-[380px]">
+    <div className="landing-phone relative mx-auto w-full max-w-[380px]">
       <div
         className="absolute -inset-7 rounded-[42px] bg-coral/15 blur-2xl"
         aria-hidden="true"

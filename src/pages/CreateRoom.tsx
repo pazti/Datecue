@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { onValue, ref, set } from "firebase/database"
+import { get, ref, set } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
 import { realtimeDatabase } from "../lib/firebase"
 interface Props {
@@ -51,15 +51,25 @@ export default function CreateRoom({
           createdAt: Date.now(),
           hostId: userId,
           members: { [userId]: true },
+          public: {
+            movieUrl: url.trim(),
+            hostId: userId,
+            createdAt: Date.now(),
+          },
         })
       else {
-        const snap = await new Promise<any>((resolve) =>
-          onValue(ref(realtimeDatabase, `rooms/${id}`), resolve, {
-            onlyOnce: true,
-          }),
-        )
-        if (!snap.exists()) {
-          setError("That room does not exist.")
+        const roomRef = ref(realtimeDatabase, `rooms/${id}/public`)
+        const snap = await Promise.race([
+          get(roomRef),
+          new Promise<never>((_, reject) =>
+            window.setTimeout(
+              () => reject(new Error("ROOM_LOOKUP_TIMEOUT")),
+              8000,
+            ),
+          ),
+        ])
+        if (!snap.exists() || !snap.val()?.movieUrl) {
+          setError("That room does not exist or is no longer available.")
           return
         }
         await set(ref(realtimeDatabase, `rooms/${id}/members/${userId}`), true)
@@ -67,8 +77,12 @@ export default function CreateRoom({
         return
       }
       onCreateRoom(id, url.trim())
-    } catch {
-      setError("Could not connect to Firebase. Try again.")
+    } catch (error) {
+      setError(
+        error instanceof Error && error.message === "ROOM_LOOKUP_TIMEOUT"
+          ? "Room lookup timed out. Check your connection and try again."
+          : "Could not join this room. Check the code and try again.",
+      )
     } finally {
       setBusy(false)
     }
