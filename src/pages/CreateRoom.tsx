@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { get, ref, set } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
-import { realtimeDatabase } from "../lib/firebase"
+import { auth, realtimeDatabase } from "../lib/firebase"
 interface Props {
   onCreateRoom: (id: string, url: string) => void
   onJoinRoom: (id: string, url: string) => void
@@ -29,8 +29,11 @@ export default function CreateRoom({
     setError("")
     const id =
       tab === "create"
-        ? Math.random().toString(36).slice(2, 8).toUpperCase()
-        : code.trim().toUpperCase()
+        ? crypto.randomUUID().replaceAll("-", "").slice(0, 6).toUpperCase()
+        : code
+            .replace(/[^a-z0-9]/gi, "")
+            .slice(0, 6)
+            .toUpperCase()
     const youtube =
       /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]{11}/.test(
         url.trim(),
@@ -41,6 +44,11 @@ export default function CreateRoom({
     }
     if (!/^[A-Z0-9]{6}$/.test(id)) {
       setError("Enter a 6-character room code.")
+      return
+    }
+    const currentUser = auth.currentUser
+    if (!currentUser || currentUser.uid !== userId) {
+      setError("Your sign-in session is still loading. Refresh and try again.")
       return
     }
     setBusy(true)
@@ -72,16 +80,30 @@ export default function CreateRoom({
           setError("That room does not exist or is no longer available.")
           return
         }
-        await set(ref(realtimeDatabase, `rooms/${id}/members/${userId}`), true)
+        await set(
+          ref(realtimeDatabase, `rooms/${id}/members/${currentUser.uid}`),
+          true,
+        )
+        const membership = await get(
+          ref(realtimeDatabase, `rooms/${id}/members/${currentUser.uid}`),
+        )
+        if (membership.val() !== true) {
+          throw new Error("MEMBERSHIP_NOT_CONFIRMED")
+        }
         onJoinRoom(id, snap.val().movieUrl)
         return
       }
       onCreateRoom(id, url.trim())
     } catch (error) {
+      const codeError = error instanceof Error ? error.message : ""
       setError(
-        error instanceof Error && error.message === "ROOM_LOOKUP_TIMEOUT"
+        codeError === "ROOM_LOOKUP_TIMEOUT"
           ? "Room lookup timed out. Check your connection and try again."
-          : "Could not join this room. Check the code and try again.",
+          : codeError === "MEMBERSHIP_NOT_CONFIRMED"
+            ? "Firebase did not confirm your membership. Deploy the latest database rules and try again."
+            : codeError.includes("PERMISSION_DENIED")
+              ? "Firebase denied this room. Deploy the latest database rules, then try again."
+              : "Could not join this room. Check the code and try again.",
       )
     } finally {
       setBusy(false)
