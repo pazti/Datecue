@@ -53,7 +53,7 @@ export default function CreateRoom({
     }
     setBusy(true)
     try {
-      if (tab === "create")
+      if (tab === "create") {
         await set(ref(realtimeDatabase, `rooms/${id}`), {
           movieUrl: url.trim(),
           createdAt: Date.now(),
@@ -65,8 +65,13 @@ export default function CreateRoom({
             createdAt: Date.now(),
           },
         })
-      else {
-        const roomRef = ref(realtimeDatabase, `rooms/${id}/public`)
+        await set(ref(realtimeDatabase, `roomDirectory/${id}`), {
+          movieUrl: url.trim(),
+          hostId: userId,
+          createdAt: Date.now(),
+        })
+      } else {
+        const roomRef = ref(realtimeDatabase, `roomDirectory/${id}`)
         const snap = await Promise.race([
           get(roomRef),
           new Promise<never>((_, reject) =>
