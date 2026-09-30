@@ -24,6 +24,11 @@
     "rooms": {
       "$roomId": {
         ".read": "auth != null && data.child('members').child(auth.uid).val() === true",
+        "public": {
+          ".read": "auth != null",
+          ".write": false,
+          ".validate": "newData.hasChildren(['movieUrl', 'hostId', 'createdAt']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('hostId').isString() && newData.child('createdAt').isNumber()"
+        },
         ".write": "auth != null && !data.exists() && newData.child('hostId').val() === auth.uid && newData.child('members').child(auth.uid).val() === true",
         ".validate": "newData.hasChildren(['movieUrl', 'createdAt', 'hostId', 'members']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').isString() && newData.child('hostId').val() === auth.uid && newData.child('members').child(auth.uid).val() === true",
         "members": {

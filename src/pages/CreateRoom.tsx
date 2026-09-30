@@ -51,10 +51,15 @@ export default function CreateRoom({
           createdAt: Date.now(),
           hostId: userId,
           members: { [userId]: true },
+          public: {
+            movieUrl: url.trim(),
+            hostId: userId,
+            createdAt: Date.now(),
+          },
         })
       else {
         const snap = await new Promise<any>((resolve) =>
-          onValue(ref(realtimeDatabase, `rooms/${id}`), resolve, {
+          onValue(ref(realtimeDatabase, `rooms/${id}/public`), resolve, {
             onlyOnce: true,
           }),
         )
