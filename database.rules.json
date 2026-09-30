@@ -33,6 +33,7 @@
         ".validate": "newData.hasChildren(['movieUrl', 'createdAt', 'hostId', 'members']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').isString() && newData.child('hostId').val() === auth.uid && newData.child('members').child(auth.uid).val() === true",
         "members": {
           "$uid": {
+            ".read": "auth != null && $uid === auth.uid",
             ".write": "auth != null && $uid === auth.uid && (!data.exists() || data.val() === true)",
             ".validate": "newData.isBoolean() && newData.val() === true"
           }
