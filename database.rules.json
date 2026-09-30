@@ -23,7 +23,7 @@
     },
     "rooms": {
       "$roomId": {
-        ".read": "auth != null && data.child('members').child(auth.uid).val() === true",
+        ".read": false,
         "public": {
           ".read": "auth != null",
           ".write": false,
