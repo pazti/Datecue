@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react"
-import Logo from "../components/Logo"
-import { Icon } from "../components/Logo"
-import LiquidHero, {
-  LiquidGlass,
-  LiquidLogoMark,
-} from "../components/LiquidHero"
+import Logo, { Icon } from "../components/Logo"
+import LiquidHero, { LiquidGlass } from "../components/LiquidHero"
 
 interface Props {
   onGetStarted: () => void
@@ -152,10 +148,7 @@ export default function LandingPage({
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12"
         aria-label="Primary navigation"
       >
-        <div className="flex items-center gap-3">
-          <LiquidLogoMark />
-          <Logo dark={darkMode} />
-        </div>
+        <Logo dark={darkMode} />
         <div className="flex items-center gap-2 sm:gap-4">
           <button
             aria-label={

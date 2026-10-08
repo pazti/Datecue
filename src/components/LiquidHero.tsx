@@ -55,6 +55,30 @@ function GradientPlane() {
   )
 }
 
+export function LiquidBackdrop() {
+  return (
+    <div className="liquid-backdrop" aria-hidden="true">
+      <Canvas
+        camera={{ position: [0, 0, 5.2], fov: 42 }}
+        dpr={[1, 1.4]}
+        gl={{ alpha: true, antialias: true }}
+      >
+        <ambientLight intensity={0.8} />
+        <pointLight color="#ffb19c" intensity={4} position={[3, 2, 3]} />
+        <pointLight color="#80d8cb" intensity={3} position={[-3, -2, 2]} />
+        <GradientPlane />
+        <Sparkles
+          count={28}
+          color="#ffe7da"
+          scale={7}
+          size={1.5}
+          speed={0.16}
+        />
+      </Canvas>
+    </div>
+  )
+}
+
 export default function LiquidHero() {
   return (
     <div

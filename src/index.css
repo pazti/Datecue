@@ -127,6 +127,15 @@ h1, h2, h3, h4 {
   transform: rotate(-10deg);
 }
 .liquid-logo-mark span { width: 12px; height: 12px; border-radius: 48% 52% 42% 58%; background: rgba(255,255,255,.8); filter: blur(.2px); }
+.liquid-logo-mark-lg { width: 34px; height: 34px; border-radius: 13px; }
+.liquid-logo-mark-lg span { width: 14px; height: 14px; }
+.liquid-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .32; filter: saturate(.9); }
+.app-content { position: relative; z-index: 1; min-height: 100dvh; }
+.app-content .bg-ivory { background-color: rgba(246, 240, 231, .84); }
+.app-content .bg-night { background-color: rgba(16, 27, 33, .88); }
+.app-content .bg-paper { background-color: rgba(251, 247, 240, .88); }
+.dark .liquid-backdrop { opacity: .42; }
+@media (prefers-reduced-motion: reduce) { .liquid-backdrop { display: none; } }
 @media (prefers-reduced-motion: no-preference) {
   .liquid-logo-mark { animation: logo-liquid 5s ease-in-out infinite; }
 }
