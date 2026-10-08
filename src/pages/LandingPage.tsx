@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react"
 import Logo from "../components/Logo"
 import { Icon } from "../components/Logo"
+import LiquidHero, {
+  LiquidGlass,
+  LiquidLogoMark,
+} from "../components/LiquidHero"
 
 interface Props {
   onGetStarted: () => void
@@ -148,7 +152,10 @@ export default function LandingPage({
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12"
         aria-label="Primary navigation"
       >
-        <Logo dark={darkMode} />
+        <div className="flex items-center gap-3">
+          <LiquidLogoMark />
+          <Logo dark={darkMode} />
+        </div>
         <div className="flex items-center gap-2 sm:gap-4">
           <button
             aria-label={
@@ -177,69 +184,75 @@ export default function LandingPage({
       </nav>
 
       <main>
-        <section className="mx-auto grid max-w-7xl items-center gap-14 px-5 pb-24 pt-12 sm:px-8 md:pb-32 md:pt-20 lg:grid-cols-[1fr_420px] lg:gap-24 lg:px-12">
-          <div className={mounted ? "reveal" : "opacity-0"}>
-            <div
-              className={`mb-6 flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] ${muted}`}
-            >
-              <span className="h-px w-8 bg-coral" /> a room for two
-            </div>
-            <h1 className="max-w-3xl text-[clamp(3.6rem,8vw,7.4rem)] leading-[.9]">
-              The best part is <em className="text-coral">who’s there.</em>
-            </h1>
-            <p
-              className={`mt-8 max-w-xl text-lg leading-relaxed ${muted} sm:text-xl`}
-            >
-              Same movie. Same second. Same reactions. Datecue is a private
-              cinema for the people you miss.
-            </p>
-            <div className="mt-9 max-w-xl">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <label className="sr-only" htmlFor="landing-url">
-                  Film link
-                </label>
-                <input
-                  id="landing-url"
-                  className="input-field focus-ring rounded-full px-5 py-3.5 text-sm"
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="Paste a film link to begin…"
-                  type="url"
-                  value={url}
-                />
-                <button
-                  className="button-primary focus-ring flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold"
-                  onClick={onGetStarted}
-                >
-                  Create room <Icon name="arrow-right" size={16} />
-                </button>
+        <section className="relative isolate mx-auto grid max-w-7xl items-center gap-14 overflow-hidden rounded-[44px] px-5 pb-24 pt-12 sm:px-8 md:pb-32 md:pt-20 lg:grid-cols-[1fr_420px] lg:gap-24 lg:px-12">
+          <LiquidHero />
+          <div className="pointer-events-none absolute inset-0 -z-0 rounded-[44px] bg-gradient-to-br from-navy/90 via-navy/55 to-coral/25" />
+          <LiquidGlass
+            className={
+              mounted
+                ? "reveal relative z-10 rounded-[30px] p-6 text-ivory sm:p-10"
+                : "relative z-10 rounded-[30px] p-6 text-ivory opacity-0 sm:p-10"
+            }
+          >
+            <div>
+              <div className="mb-6 flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-ivory/70">
+                <span className="h-px w-8 bg-coral" /> a room for two
               </div>
-              <p className={`mt-3 text-xs ${muted}`}>
-                Sign in to create a private room. Invite someone in one tap.
+              <h1 className="max-w-3xl text-[clamp(3.6rem,8vw,7.4rem)] leading-[.9]">
+                The best part is <em className="text-coral">who’s there.</em>
+              </h1>
+              <p className="mt-8 max-w-xl text-lg leading-relaxed text-ivory/72 sm:text-xl">
+                Same movie. Same second. Same reactions. Datecue is a private
+                cinema for the people you miss.
               </p>
-            </div>
-            <div
-              className={`mt-12 flex items-center gap-3 border-t pt-5 hairline text-sm ${muted}`}
-            >
-              <div className="flex -space-x-2" aria-hidden="true">
-                {["M", "A", "J", "S"].map((letter, index) => (
-                  <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${
-                      darkMode ? "border-night" : "border-ivory"
-                    } ${["bg-coral", "bg-moss", "bg-ochre", "bg-navy"][index]} text-[10px] font-bold text-ivory`}
-                    key={letter}
+              <div className="mt-9 max-w-xl">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <label className="sr-only" htmlFor="landing-url">
+                    Film link
+                  </label>
+                  <input
+                    id="landing-url"
+                    className="input-field focus-ring rounded-full px-5 py-3.5 text-sm"
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="Paste a film link to begin…"
+                    type="url"
+                    value={url}
+                  />
+                  <button
+                    className="button-primary focus-ring flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold"
+                    onClick={onGetStarted}
                   >
-                    {letter}
-                  </span>
-                ))}
+                    Create room <Icon name="arrow-right" size={16} />
+                  </button>
+                </div>
+                <p className={`mt-3 text-xs ${muted}`}>
+                  Sign in to create a private room. Invite someone in one tap.
+                </p>
               </div>
-              <span>
-                <strong className={darkMode ? "text-ivory" : "text-ink"}>
-                  12,400
-                </strong>{" "}
-                quiet movie nights started
-              </span>
+              <div
+                className={`mt-12 flex items-center gap-3 border-t pt-5 hairline text-sm ${muted}`}
+              >
+                <div className="flex -space-x-2" aria-hidden="true">
+                  {["M", "A", "J", "S"].map((letter, index) => (
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${
+                        darkMode ? "border-night" : "border-ivory"
+                      } ${["bg-coral", "bg-moss", "bg-ochre", "bg-navy"][index]} text-[10px] font-bold text-ivory`}
+                      key={letter}
+                    >
+                      {letter}
+                    </span>
+                  ))}
+                </div>
+                <span>
+                  <strong className={darkMode ? "text-ivory" : "text-ink"}>
+                    12,400
+                  </strong>{" "}
+                  quiet movie nights started
+                </span>
+              </div>
             </div>
-          </div>
+          </LiquidGlass>
           <div
             className={`${
               mounted ? "reveal reveal-delay-2" : "opacity-0"
