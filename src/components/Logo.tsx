@@ -14,29 +14,12 @@ export function LogoMark({
   className?: string
 }) {
   return (
-    <svg
+    <span
+      className={`liquid-logo-mark liquid-logo-mark-lg ${className}`}
       aria-hidden="true"
-      className={className}
-      fill="none"
-      height="34"
-      viewBox="0 0 34 34"
-      width="34"
-      xmlns="http://www.w3.org/2000/svg"
     >
-      <rect
-        fill={dark ? "#D86856" : "#D86856"}
-        height="34"
-        rx="11"
-        width="34"
-      />
-      <path
-        d="M10 11.5h14M10 17h14M10 22.5h8"
-        stroke="#FBF7F0"
-        strokeLinecap="round"
-        strokeWidth="2.2"
-      />
-      <circle cx="23.5" cy="22.5" fill="#F2C69E" r="2.5" />
-    </svg>
+      <span />
+    </span>
   )
 }
 

@@ -6,6 +6,7 @@ import WatchRoom from "./pages/WatchRoom"
 import AuthPage from "./pages/AuthPage"
 import HomePage from "./pages/HomePage"
 import AppErrorBoundary from "./components/AppErrorBoundary"
+import { LiquidBackdrop } from "./components/LiquidHero"
 import { auth } from "./lib/firebase"
 
 type Screen = "landing" | "auth" | "home" | "create" | "watch"
@@ -40,58 +41,61 @@ export default function App() {
   return (
     <AppErrorBoundary>
       <div className={darkMode ? "dark" : ""}>
-        {screen === "landing" && (
-          <LandingPage
-            {...theme}
-            onGetStarted={() => requireAuth("create")}
-            onLogin={() => setScreen("auth")}
-          />
-        )}
-        {screen === "auth" && (
-          <AuthPage
-            {...theme}
-            onSuccess={() => setScreen("home")}
-            onBack={() => setScreen("landing")}
-          />
-        )}
-        {screen === "home" && userId && (
-          <HomePage
-            {...theme}
-            userId={userId}
-            onCreate={() => setScreen("create")}
-            onJoin={() => setScreen("create")}
-            onLogout={() => {
-              void signOut(auth)
-              setScreen("landing")
-            }}
-          />
-        )}
-        {screen === "create" && userId && (
-          <CreateRoom
-            {...theme}
-            userId={userId}
-            onCreateRoom={(id, url) => {
-              setRoomId(id)
-              setMovieUrl(url)
-              setScreen("watch")
-            }}
-            onJoinRoom={(id, url) => {
-              setRoomId(id)
-              setMovieUrl(url)
-              setScreen("watch")
-            }}
-            onBack={() => setScreen("home")}
-          />
-        )}
-        {screen === "watch" && userId && (
-          <WatchRoom
-            {...theme}
-            roomId={roomId}
-            movieUrl={movieUrl}
-            userId={userId}
-            onLeave={() => setScreen("home")}
-          />
-        )}
+        <LiquidBackdrop />
+        <div className="app-content">
+          {screen === "landing" && (
+            <LandingPage
+              {...theme}
+              onGetStarted={() => requireAuth("create")}
+              onLogin={() => setScreen("auth")}
+            />
+          )}
+          {screen === "auth" && (
+            <AuthPage
+              {...theme}
+              onSuccess={() => setScreen("home")}
+              onBack={() => setScreen("landing")}
+            />
+          )}
+          {screen === "home" && userId && (
+            <HomePage
+              {...theme}
+              userId={userId}
+              onCreate={() => setScreen("create")}
+              onJoin={() => setScreen("create")}
+              onLogout={() => {
+                void signOut(auth)
+                setScreen("landing")
+              }}
+            />
+          )}
+          {screen === "create" && userId && (
+            <CreateRoom
+              {...theme}
+              userId={userId}
+              onCreateRoom={(id, url) => {
+                setRoomId(id)
+                setMovieUrl(url)
+                setScreen("watch")
+              }}
+              onJoinRoom={(id, url) => {
+                setRoomId(id)
+                setMovieUrl(url)
+                setScreen("watch")
+              }}
+              onBack={() => setScreen("home")}
+            />
+          )}
+          {screen === "watch" && userId && (
+            <WatchRoom
+              {...theme}
+              roomId={roomId}
+              movieUrl={movieUrl}
+              userId={userId}
+              onLeave={() => setScreen("home")}
+            />
+          )}
+        </div>
       </div>
     </AppErrorBoundary>
   )
