@@ -34,8 +34,8 @@ export default defineConfig(({ mode }) => {
     server: {
       host: process.env.FIGMA_DEV_SERVER_HOST || "0.0.0.0",
       port: parseInt(process.env.PORT || "5000"),
-      // Let the preview runner recover if an old Vite process briefly holds the port.
-      strictPort: false,
+      // Keep the preview on the configured port so it cannot show a stale Vite instance.
+      strictPort: true,
       watch: {
         ignored: ["**/.figma/**"],
       },
