@@ -129,7 +129,13 @@ h1, h2, h3, h4 {
 .liquid-logo-mark span { width: 12px; height: 12px; border-radius: 48% 52% 42% 58%; background: rgba(255,255,255,.8); filter: blur(.2px); }
 .liquid-logo-mark-lg { width: 34px; height: 34px; border-radius: 13px; }
 .liquid-logo-mark-lg span { width: 14px; height: 14px; }
-.liquid-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .32; filter: saturate(.9); }
+.liquid-backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; opacity: .28; }
+.liquid-backdrop-glow { position: absolute; width: 40vw; aspect-ratio: 1; border-radius: 50%; filter: blur(72px); }
+.liquid-backdrop-glow-one { top: -14vw; right: -10vw; background: rgba(216, 104, 86, .22); }
+.liquid-backdrop-glow-two { bottom: -18vw; left: -12vw; background: rgba(76, 145, 132, .18); }
+.liquid-hero { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.liquid-hero-orb { position: absolute; top: 4%; right: 6%; width: min(62vw, 720px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(238, 171, 148, .56), rgba(190, 101, 92, .24) 28%, rgba(50, 98, 105, .32) 52%, transparent 72%); filter: blur(16px); }
+.liquid-hero-halo { position: absolute; right: 10%; top: 15%; width: min(42vw, 500px); aspect-ratio: 1; border: 1px solid rgba(255,255,255,.16); border-radius: 48% 52% 64% 36%; transform: rotate(-18deg); }
 .app-content { position: relative; z-index: 1; min-height: 100dvh; }
 .app-content .bg-ivory { background-color: rgba(246, 240, 231, .84); }
 .app-content .bg-night { background-color: rgba(16, 27, 33, .88); }
@@ -164,7 +170,7 @@ h1, h2, h3, h4 {
 .dark .input-field { background: rgba(255,255,255,.07); color: #f6f0e7; }
 .dark .input-field:focus { background: rgba(255,255,255,.1); }
 
-.reveal { animation: reveal 700ms cubic-bezier(.2,.75,.25,1) both; }
+.reveal { animation: reveal 420ms cubic-bezier(.2,.75,.25,1) both; }
 .reveal-delay-1 { animation-delay: 110ms; }
 .reveal-delay-2 { animation-delay: 220ms; }
 .reveal-delay-3 { animation-delay: 340ms; }
@@ -182,8 +188,8 @@ h1, h2, h3, h4 {
   to { opacity: 1; transform: translateY(-130px) scale(1); }
 }
 .drift { animation: drift 7s ease-in-out infinite; }
-.landing-phone { animation: landing-float 8s ease-in-out 500ms infinite; }
-.reaction-rise { animation: rise 3s ease-out forwards; }
+.landing-phone { animation: none; }
+.reaction-rise { animation: rise 900ms ease-out forwards; }
 @keyframes landing-float {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-8px) rotate(.6deg); }
@@ -201,7 +207,7 @@ h1, h2, h3, h4 {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 * { scrollbar-width: thin; scrollbar-color: #c28b72 transparent; }
 @media (prefers-reduced-motion: reduce) {
-  .landing-phone { animation: none; }
+  .landing-phone, .liquid-logo-mark, .liquid-hero { animation: none; }
   *, *::before, *::after {
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;

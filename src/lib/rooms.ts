@@ -1,4 +1,4 @@
-import { ref, set, get, update, remove } from "firebase/database"
+import { ref, set, get, update, remove, runTransaction } from "firebase/database"
 import { realtimeDatabase } from "./firebase"
 
 export interface RoomStats {
@@ -37,12 +37,12 @@ export async function getRoomData(roomId: string) {
 
 export async function updateUserStats(userId: string, watchSeconds: number) {
   const statsRef = ref(realtimeDatabase, `users/${userId}/stats`)
-  const snap = await get(statsRef)
-  const current = snap.val() ?? { watchSeconds: 0 }
-  return set(statsRef, {
-    watchSeconds: Math.max(0, current.watchSeconds + watchSeconds),
+  return runTransaction(statsRef, (current) => ({
+    ...(current ?? {}),
+    watchSeconds: Math.max(0, (current?.watchSeconds ?? 0) + watchSeconds),
     lastUpdated: Date.now(),
   })
+  )
 }
 
 export async function addToWatchHistory(
@@ -51,9 +51,46 @@ export async function addToWatchHistory(
   movieUrl: string,
   watchSeconds: number,
 ) {
-  return set(ref(realtimeDatabase, `users/${userId}/history/${roomId}`), {
+  const historyRef = ref(realtimeDatabase, `users/${userId}/history/${roomId}`)
+  return runTransaction(historyRef, (current) => ({
     movieUrl,
-    watchSeconds,
+    watchedSeconds: (current?.watchedSeconds ?? 0) + watchSeconds,
     updatedAt: Date.now(),
+  })
+  )
+}
+
+export async function recordWatchSession(
+  userId: string,
+  roomId: string,
+  movieUrl: string,
+  watchSeconds: number,
+  sessionId: string,
+) {
+  if (watchSeconds <= 0) return
+  const userRef = ref(realtimeDatabase, `users/${userId}`)
+  return runTransaction(userRef, (current) => {
+    const user = current ?? {}
+    const history = user.history ?? {}
+    const previous = history[roomId] ?? {}
+    if (previous.lastSessionId === sessionId) return user
+
+    return {
+      ...user,
+      stats: {
+        ...(user.stats ?? {}),
+        watchSeconds: (user.stats?.watchSeconds ?? 0) + watchSeconds,
+        lastUpdated: Date.now(),
+      },
+      history: {
+        ...history,
+        [roomId]: {
+          movieUrl,
+          watchedSeconds: (previous.watchedSeconds ?? 0) + watchSeconds,
+          updatedAt: Date.now(),
+          lastSessionId: sessionId,
+        },
+      },
+    }
   })
 }

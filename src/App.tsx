@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { onAuthStateChanged, signOut } from "firebase/auth"
 import LandingPage from "./pages/LandingPage"
 import CreateRoom from "./pages/CreateRoom"
@@ -10,23 +10,80 @@ import { LiquidBackdrop } from "./components/LiquidHero"
 import { auth } from "./lib/firebase"
 
 type Screen = "landing" | "auth" | "home" | "create" | "watch"
+type Route = { screen: Screen; roomCode?: string }
+
+function readRoute(): Route {
+  const route = window.location.hash.replace(/^#\/?/, "")
+  const roomMatch = route.match(/^room\/([a-z0-9]{6})$/i)
+  if (roomMatch) return { screen: "create", roomCode: roomMatch[1].toUpperCase() }
+  if (route === "auth") return { screen: "auth" }
+  if (route === "home") return { screen: "home" }
+  if (route === "create") return { screen: "create" }
+  return { screen: "landing" }
+}
+
+function routeHash(screen: Screen, roomCode?: string) {
+  if (screen === "landing") return "#/"
+  if (screen === "watch" && roomCode) return `#/room/${roomCode}`
+  return `#/${screen}`
+}
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("landing")
+  const [initialRoute] = useState(readRoute)
+  const [screen, setScreen] = useState<Screen>(
+    initialRoute.roomCode ? "auth" : initialRoute.screen,
+  )
   const [darkMode, setDarkMode] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [roomId, setRoomId] = useState("")
   const [movieUrl, setMovieUrl] = useState("")
+  const [pendingRoomCode, setPendingRoomCode] = useState(
+    initialRoute.roomCode ?? "",
+  )
+  const [pendingMovieUrl, setPendingMovieUrl] = useState("")
+  const authInitialized = useRef(false)
 
   useEffect(
     () =>
       onAuthStateChanged(auth, (user) => {
         setUserId(user?.uid ?? null)
         setAuthReady(true)
+        if (!authInitialized.current) {
+          authInitialized.current = true
+          const route = initialRoute
+          if (route.roomCode) setScreen(user ? "create" : "auth")
+          else if (!user && ["home", "create", "watch"].includes(route.screen))
+            setScreen("auth")
+          else if (user && route.screen === "auth") setScreen("home")
+        } else if (!user && ["home", "create", "watch"].includes(screen)) {
+          setScreen("auth")
+        }
       }),
-    [],
+    [initialRoute, screen],
   )
+
+  const navigate = (next: Screen, code = roomId) => {
+    window.history.pushState(
+      {},
+      "",
+      `${window.location.pathname}${window.location.search}${routeHash(next, code)}`,
+    )
+    setScreen(next)
+  }
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = readRoute()
+      setPendingRoomCode(route.roomCode ?? "")
+      if (route.roomCode) setScreen(userId ? "create" : "auth")
+      else if (!userId && ["home", "create", "watch"].includes(route.screen))
+        setScreen("auth")
+      else setScreen(route.screen)
+    }
+    window.addEventListener("popstate", syncRoute)
+    return () => window.removeEventListener("popstate", syncRoute)
+  }, [userId])
 
   if (!authReady)
     return (
@@ -35,9 +92,16 @@ export default function App() {
       </div>
     )
 
-  const theme = { darkMode, onToggleDark: () => setDarkMode((value) => !value) }
-  const requireAuth = (next: "create" | "home") =>
-    userId ? setScreen(next) : setScreen("auth")
+  const theme = {
+    darkMode,
+    onToggleDark: () => setDarkMode((value) => !value),
+  }
+  const startCreating = (url = "") => {
+    setPendingMovieUrl(url.trim())
+    setPendingRoomCode("")
+    navigate(userId ? "create" : "auth")
+  }
+
   return (
     <AppErrorBoundary>
       <div className={darkMode ? "dark" : ""}>
@@ -46,26 +110,41 @@ export default function App() {
           {screen === "landing" && (
             <LandingPage
               {...theme}
-              onGetStarted={() => requireAuth("create")}
-              onLogin={() => setScreen("auth")}
+              onGetStarted={startCreating}
+              onLogin={() => navigate("auth")}
             />
           )}
           {screen === "auth" && (
             <AuthPage
               {...theme}
-              onSuccess={() => setScreen("home")}
-              onBack={() => setScreen("landing")}
+              onSuccess={() =>
+                navigate(pendingRoomCode || pendingMovieUrl ? "create" : "home")
+              }
+              onBack={() => navigate("landing")}
             />
           )}
           {screen === "home" && userId && (
             <HomePage
               {...theme}
               userId={userId}
-              onCreate={() => setScreen("create")}
-              onJoin={() => setScreen("create")}
-              onLogout={() => {
-                void signOut(auth)
-                setScreen("landing")
+              onCreate={() => {
+                setPendingMovieUrl("")
+                setPendingRoomCode("")
+                navigate("create")
+              }}
+              onJoin={() => {
+                setPendingMovieUrl("")
+                setPendingRoomCode("")
+                navigate("create")
+              }}
+              onOpenRoom={(id, url) => {
+                setRoomId(id)
+                setMovieUrl(url)
+                navigate("watch", id)
+              }}
+              onLogout={async () => {
+                await signOut(auth)
+                navigate("landing")
               }}
             />
           )}
@@ -73,17 +152,23 @@ export default function App() {
             <CreateRoom
               {...theme}
               userId={userId}
+              initialRoomCode={pendingRoomCode}
+              initialMovieUrl={pendingMovieUrl}
               onCreateRoom={(id, url) => {
+                setPendingRoomCode("")
+                setPendingMovieUrl("")
                 setRoomId(id)
                 setMovieUrl(url)
-                setScreen("watch")
+                navigate("watch", id)
               }}
               onJoinRoom={(id, url) => {
+                setPendingRoomCode("")
+                setPendingMovieUrl("")
                 setRoomId(id)
                 setMovieUrl(url)
-                setScreen("watch")
+                navigate("watch", id)
               }}
-              onBack={() => setScreen("home")}
+              onBack={() => navigate("home")}
             />
           )}
           {screen === "watch" && userId && (
@@ -92,7 +177,7 @@ export default function App() {
               roomId={roomId}
               movieUrl={movieUrl}
               userId={userId}
-              onLeave={() => setScreen("home")}
+              onLeave={() => navigate("home")}
             />
           )}
         </div>

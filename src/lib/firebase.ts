@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from "firebase/app"
 import { getAuth } from "firebase/auth"
 import { getDatabase } from "firebase/database"
+import { youtubeVideoIdFromUrl } from "./youtube"
 
 export const firebaseConfig = {
   apiKey:
@@ -30,11 +31,7 @@ export const realtimeDatabase = getDatabase(app)
 export default app
 
 export function youtubeIdFromUrl(value: string) {
-  return (
-    value.match(
-      /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/,
-    )?.[1] ?? null
-  )
+  return youtubeVideoIdFromUrl(value)
 }
 
 export function formatDuration(seconds: number) {

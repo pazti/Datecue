@@ -1,6 +1,7 @@
 import { useState } from "react"
 import {
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth"
 import Logo, { Icon } from "../components/Logo"
@@ -23,6 +24,7 @@ export default function AuthPage({
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [resetSent, setResetSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
@@ -30,6 +32,7 @@ export default function AuthPage({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError("")
+    setResetSent(false)
     setBusy(true)
     try {
       if (mode === "login")
@@ -47,6 +50,23 @@ export default function AuthPage({
               ? "Use a password with at least 6 characters."
               : "Unable to authenticate. Check your details and try again.",
       )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetPassword = async () => {
+    if (!email.trim()) {
+      setError("Enter your email address first.")
+      return
+    }
+    setError("")
+    setBusy(true)
+    try {
+      await sendPasswordResetEmail(auth, email.trim())
+      setResetSent(true)
+    } catch {
+      setError("We couldn't send a reset link. Check the email address and try again.")
     } finally {
       setBusy(false)
     }
@@ -76,7 +96,9 @@ export default function AuthPage({
         <p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>
           your datecue account
         </p>
-        <h1 className="mt-5 text-6xl leading-[.9]">Keep the night going.</h1>
+        <h1 className="mt-5 text-5xl leading-[.95] sm:text-6xl">
+          Keep the night going.
+        </h1>
         <p className={`mt-6 text-base leading-relaxed ${muted}`}>
           {mode === "login"
             ? "Sign in to return to your rooms and pick up where you left off."
@@ -96,6 +118,7 @@ export default function AuthPage({
                 onClick={() => {
                   setMode(item)
                   setError("")
+                  setResetSent(false)
                 }}
                 type="button"
               >
@@ -121,6 +144,25 @@ export default function AuthPage({
             type="email"
             value={email}
           />
+          {mode === "login" && (
+            <div className="mt-2 flex items-center justify-between gap-3">
+              {resetSent ? (
+                <p className="text-sm text-moss" role="status">
+                  Reset link sent. Check your inbox.
+                </p>
+              ) : (
+                <span />
+              )}
+              <button
+                className="focus-ring rounded-md text-sm font-semibold text-coral underline-offset-4 hover:underline"
+                disabled={busy}
+                onClick={() => void resetPassword()}
+                type="button"
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
           <label
             className={`mb-2 mt-5 block text-xs font-bold uppercase tracking-[.16em] ${muted}`}
             htmlFor="auth-password"

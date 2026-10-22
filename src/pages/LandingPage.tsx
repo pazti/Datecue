@@ -3,7 +3,7 @@ import Logo, { Icon } from "../components/Logo"
 import LiquidHero, { LiquidGlass } from "../components/LiquidHero"
 
 interface Props {
-  onGetStarted: () => void
+  onGetStarted: (url: string) => void
   onLogin: () => void
   darkMode: boolean
   onToggleDark: () => void
@@ -199,7 +199,13 @@ export default function LandingPage({
                 cinema for the people you miss.
               </p>
               <div className="mt-9 max-w-xl">
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <form
+                  className="flex flex-col gap-2 sm:flex-row"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    onGetStarted(url)
+                  }}
+                >
                   <label className="sr-only" htmlFor="landing-url">
                     Film link
                   </label>
@@ -208,16 +214,17 @@ export default function LandingPage({
                     className="input-field focus-ring rounded-full px-5 py-3.5 text-sm"
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste a film link to begin…"
+                    autoComplete="url"
                     type="url"
                     value={url}
                   />
                   <button
                     className="button-primary focus-ring flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold"
-                    onClick={onGetStarted}
+                    type="submit"
                   >
                     Create room <Icon name="arrow-right" size={16} />
                   </button>
-                </div>
+                </form>
                 <p className={`mt-3 text-xs ${muted}`}>
                   Sign in to create a private room. Invite someone in one tap.
                 </p>

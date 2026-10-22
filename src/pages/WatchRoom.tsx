@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  limitToLast,
   onDisconnect,
   onValue,
+  orderByChild,
   push,
+  query,
   ref,
   remove,
   set,
-  update,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
 import { realtimeDatabase, youtubeIdFromUrl } from "../lib/firebase"
+import { recordWatchSession } from "../lib/rooms"
 import {
   isValidMessage,
   isValidReaction,
@@ -24,20 +27,21 @@ interface Props {
   movieUrl: string
   userId: string
 }
+
 interface Message {
   id: string
   uid: string
   text: string
   createdAt: number
-  edited?: boolean
-  replyTo?: string
 }
+
 interface Reaction {
   id: string
   uid: string
   emoji: string
   createdAt: number
 }
+
 interface Playback {
   playing?: boolean
   currentTime?: number
@@ -46,6 +50,9 @@ interface Playback {
 }
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "👋"]
+const MAX_VISIBLE_MESSAGES = 100
+const MAX_VISIBLE_REACTIONS = 30
+const REACTION_LIFETIME_MS = 15_000
 
 export default function WatchRoom({
   onLeave,
@@ -57,50 +64,124 @@ export default function WatchRoom({
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Reaction[]>([])
-  const [presence, setPresence] = useState<Record<string, {
-    online?: boolean
-  }>>({})
+  const [presence, setPresence] = useState<Record<string, { online?: boolean }>>({})
   const [playback, setPlayback] = useState<Playback>({})
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [playerReady, setPlayerReady] = useState(false)
   const [text, setText] = useState("")
   const [showReactions, setShowReactions] = useState(false)
   const [videoError, setVideoError] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
+  const [roomError, setRoomError] = useState("")
+  const [sending, setSending] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
-  const lastWrite = useRef(0)
+  const playbackRef = useRef<Playback>({})
+  const roomHostRef = useRef<string | null>(null)
+  const isPlayingRef = useRef(false)
+  const lastPublishAtRef = useRef(0)
+  const hostSampleRef = useRef<{ time: number; at: number; playing: boolean } | null>(
+    null,
+  )
+  const watchedSecondsRef = useRef(0)
+  const sessionIdRef = useRef("")
+  const messageEndRef = useRef<HTMLDivElement>(null)
   const videoId = youtubeIdFromUrl(movieUrl)
-  const onlineCount = Object.values(presence).filter(
-    (item) => item.online,
-  ).length
+  const onlineCount = Object.values(presence).filter((item) => item.online).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
 
+  const publishPlayback = useCallback(
+    async (playing: boolean, currentTime: number) => {
+      if (roomHostRef.current !== userId || !Number.isFinite(currentTime)) return
+      const updatedAt = Date.now()
+      try {
+        await set(ref(realtimeDatabase, `rooms/${roomId}/playback`), {
+          playing,
+          currentTime: Math.max(0, currentTime),
+          updatedAt,
+          hostId: userId,
+        })
+        lastPublishAtRef.current = updatedAt
+      } catch {
+        setRoomError("Playback couldn't sync. Check the room's Firebase rules and your connection.")
+      }
+    },
+    [roomId, userId],
+  )
+
   useEffect(() => {
-    const presenceRef = ref(
-      realtimeDatabase,
-      `rooms/${roomId}/presence/${userId}`,
+    const presenceRef = ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)
+    const memberRef = ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)
+    const messagesQuery = query(
+      ref(realtimeDatabase, `rooms/${roomId}/messages`),
+      orderByChild("createdAt"),
+      limitToLast(MAX_VISIBLE_MESSAGES),
     )
-    void set(presenceRef, { online: true, updatedAt: Date.now() })
-    void onDisconnect(presenceRef).remove()
+    const reactionsQuery = query(
+      ref(realtimeDatabase, `rooms/${roomId}/reactions`),
+      orderByChild("createdAt"),
+      limitToLast(MAX_VISIBLE_REACTIONS),
+    )
+    const fail = () =>
+      setRoomError("Room updates are unavailable. Check the Firebase rules and try again.")
+
+    void set(presenceRef, { online: true, updatedAt: Date.now() }).catch(fail)
+    void onDisconnect(presenceRef).remove().catch(fail)
+    void onDisconnect(memberRef).remove().catch(fail)
+
     const stops = [
-      onValue(ref(realtimeDatabase, `rooms/${roomId}/presence`), (snap) =>
-        setPresence(snap.val() ?? {}),
+      onValue(
+        ref(realtimeDatabase, `roomDirectory/${roomId}`),
+        (snap) => {
+          roomHostRef.current = snap.val()?.hostId ?? null
+        },
+        fail,
       ),
-      onValue(ref(realtimeDatabase, `rooms/${roomId}/playback`), (snap) =>
-        setPlayback(snap.val() ?? {}),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/presence`),
+        (snap) => setPresence(snap.val() ?? {}),
+        fail,
       ),
-      onValue(ref(realtimeDatabase, `rooms/${roomId}/messages`), (snap) =>
-        setMessages(
-          Object.entries(snap.val() ?? {})
-            .map(([id, value]) => ({ id, ...value as Omit<Message, "id"> }))
-            .sort((a, b) => a.createdAt - b.createdAt),
-        ),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/playback`),
+        (snap) => {
+          const value = snap.val() ?? {}
+          playbackRef.current = value
+          setPlayback(value)
+        },
+        fail,
       ),
-      onValue(ref(realtimeDatabase, `rooms/${roomId}/reactions`), (snap) =>
-        setReactions(
-          Object.entries(snap.val() ?? {})
-            .map(([id, value]) => ({ id, ...value as Omit<Reaction, "id"> }))
-            .filter((item) => Date.now() - item.createdAt < 15000),
-        ),
+      onValue(
+        messagesQuery,
+        (snap) => {
+          setMessages(
+            Object.entries(snap.val() ?? {})
+              .map(([id, value]) => ({ id, ...(value as Omit<Message, "id">) }))
+              .sort((a, b) => a.createdAt - b.createdAt),
+          )
+        },
+        fail,
+      ),
+      onValue(
+        reactionsQuery,
+        (snap) => {
+          const recent = Object.entries(snap.val() ?? {})
+            .map(([id, value]) => ({ id, ...(value as Omit<Reaction, "id">) }))
+            .filter((item) => Date.now() - item.createdAt < REACTION_LIFETIME_MS)
+          setReactions(recent)
+          for (const [id, value] of Object.entries(snap.val() ?? {})) {
+            const reaction = value as Reaction
+            if (
+              reaction.uid === userId &&
+              Date.now() - reaction.createdAt >= REACTION_LIFETIME_MS
+            ) {
+              void remove(ref(realtimeDatabase, `rooms/${roomId}/reactions/${id}`))
+            }
+          }
+        },
+        fail,
       ),
     ]
     return () => {
@@ -110,16 +191,18 @@ export default function WatchRoom({
   }, [roomId, userId])
 
   useEffect(() => {
+    setVideoError(false)
+    setPlayerReady(false)
     if (!videoId) return
-    const existing = document.querySelector("script[data-youtube-api]")
-    if (!existing) {
-      const script = document.createElement("script")
-      script.src = "https://www.youtube.com/iframe_api"
-      script.dataset.youtubeApi = "true"
-      document.body.appendChild(script)
-    }
+
+    let timeout = 0
+    let script: HTMLScriptElement | null = null
+    let previousReady: (() => void) | undefined
+    let readyCallback: (() => void) | undefined
+
     const createPlayer = () => {
       if (!window.YT?.Player) return
+      window.clearTimeout(timeout)
       playerRef.current?.destroy?.()
       playerRef.current = new window.YT.Player(`youtube-player-${roomId}`, {
         videoId,
@@ -131,66 +214,122 @@ export default function WatchRoom({
           origin: window.location.origin,
         },
         events: {
-          onError: () => setVideoError(true),
+          onReady: () => setPlayerReady(true),
+          onError: () => {
+            setVideoError(true)
+            setRoomError("YouTube couldn't play this video. It may be restricted from embedding.")
+          },
           onStateChange: (event: any) => {
-            if (event.data === 1 || event.data === 2)
-              void publishPlayback(
-                event.data === 1,
-                event.target.getCurrentTime(),
-              )
+            if (![0, 1, 2].includes(event.data)) return
+            const playing = event.data === 1
+            isPlayingRef.current = playing
+            setIsPlaying(playing)
+            void publishPlayback(playing, event.target.getCurrentTime())
           },
         },
       })
     }
-    if (window.YT?.Player) createPlayer()
-    else {
-      const previous = window.onYouTubeIframeAPIReady
-      window.onYouTubeIframeAPIReady = () => {
-        previous?.()
+
+    if (window.YT?.Player) {
+      createPlayer()
+    } else {
+      script = document.querySelector("script[data-youtube-api]")
+      if (!script) {
+        script = document.createElement("script")
+        script.src = "https://www.youtube.com/iframe_api"
+        script.dataset.youtubeApi = "true"
+        document.body.appendChild(script)
+      }
+      previousReady = window.onYouTubeIframeAPIReady
+      readyCallback = () => {
+        previousReady?.()
         createPlayer()
       }
+      window.onYouTubeIframeAPIReady = readyCallback
+      script.addEventListener(
+        "error",
+        () => {
+          window.clearTimeout(timeout)
+          setVideoError(true)
+          setRoomError("The YouTube player couldn't load. Check your connection and try again.")
+        },
+        { once: true },
+      )
+      timeout = window.setTimeout(() => {
+        setVideoError(true)
+        setRoomError("The YouTube player took too long to load.")
+      }, 12_000)
     }
+
     return () => {
+      window.clearTimeout(timeout)
+      if (readyCallback && window.onYouTubeIframeAPIReady === readyCallback)
+        window.onYouTubeIframeAPIReady = previousReady
       playerRef.current?.destroy?.()
       playerRef.current = null
+      isPlayingRef.current = false
+      setPlayerReady(false)
     }
-  }, [roomId, videoId])
+  }, [roomId, videoId, publishPlayback])
 
   useEffect(() => {
-    if (
-      !playerRef.current ||
-      !playback.updatedAt ||
-      playback.hostId === userId ||
-      Date.now() - playback.updatedAt > 8000
-    )
-      return
+    if (!playerReady || !playback.updatedAt || playback.hostId === userId) return
+    const player = playerRef.current
+    if (!player) return
     const target =
       (playback.currentTime ?? 0) +
-      (playback.playing ? (Date.now() - playback.updatedAt) / 1000 : 0)
-    if (Math.abs((playerRef.current.getCurrentTime?.() ?? 0) - target) > 2)
-      playerRef.current.seekTo?.(target, true)
-    playback.playing
-      ? playerRef.current.playVideo?.()
-      : playerRef.current.pauseVideo?.()
-  }, [playback, userId])
+      (playback.playing ? Math.max(0, Date.now() - playback.updatedAt) / 1000 : 0)
+    const currentTime = player.getCurrentTime?.() ?? 0
+    if (Math.abs(currentTime - target) > 1.5) player.seekTo?.(target, true)
+    isPlayingRef.current = Boolean(playback.playing)
+    setIsPlaying(Boolean(playback.playing))
+    playback.playing ? player.playVideo?.() : player.pauseVideo?.()
+  }, [playback, playerReady, userId])
 
-  const publishPlayback = async (playing: boolean, currentTime: number) => {
-    if (playback.hostId && playback.hostId !== userId) return
-    if (Date.now() - lastWrite.current < 700) return
-    lastWrite.current = Date.now()
-    await set(ref(realtimeDatabase, `rooms/${roomId}/playback`), {
-      playing,
-      currentTime,
-      updatedAt: Date.now(),
-      hostId: userId,
-    })
-  }
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (isPlayingRef.current) watchedSecondsRef.current += 1
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const player = playerRef.current
+      if (!playerReady || roomHostRef.current !== userId || !player) return
+      const now = Date.now()
+      const currentTime = player.getCurrentTime?.()
+      if (typeof currentTime !== "number") return
+      const playing = player.getPlayerState?.() === 1
+      const previous = hostSampleRef.current
+
+      if (previous) {
+        const expected =
+          previous.time + (previous.playing ? (now - previous.at) / 1000 : 0)
+        const wasSeeked = Math.abs(currentTime - expected) > 1.5
+        const heartbeatDue = playing && now - lastPublishAtRef.current >= 5000
+        if (wasSeeked || heartbeatDue) void publishPlayback(playing, currentTime)
+      }
+
+      hostSampleRef.current = { time: currentTime, at: now, playing }
+      isPlayingRef.current = playing
+      setIsPlaying(playing)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [playerReady, publishPlayback, userId])
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: "end" })
+  }, [messages.length])
+
   const sendMessage = async () => {
     const value = sanitizeMessage(text.trim())
     if (!isValidMessage(value)) {
-      setSendError("Keep messages between 1 and 500 characters.")
+      setSendError("Write a message before sending (up to 500 characters).")
       return
     }
+    setSending(true)
+    setSendError("")
     try {
       await push(ref(realtimeDatabase, `rooms/${roomId}/messages`), {
         uid: userId,
@@ -198,63 +337,102 @@ export default function WatchRoom({
         createdAt: Date.now(),
       })
       setText("")
-      setSendError("")
     } catch {
-      setSendError("Message failed. Check your connection and try again.")
+      setSendError("Message failed to send. Check your connection and try again.")
+    } finally {
+      setSending(false)
     }
   }
+
   const sendReaction = async (emoji: string) => {
     if (!isValidReaction(emoji)) return
+    setSendError("")
     try {
-      await push(ref(realtimeDatabase, `rooms/${roomId}/reactions`), {
-        uid: userId,
-        emoji,
-        createdAt: Date.now(),
-      })
+      const reactionRef = push(ref(realtimeDatabase, `rooms/${roomId}/reactions`))
+      await set(reactionRef, { uid: userId, emoji, createdAt: Date.now() })
       setShowReactions(false)
+      window.setTimeout(() => {
+        void remove(reactionRef).catch(() => {
+          setRoomError("An old reaction couldn't be cleared. It will be hidden from the room.")
+        })
+      }, REACTION_LIFETIME_MS)
     } catch {
-      setSendError("Reaction failed. Check your connection and try again.")
+      setSendError("Reaction failed to send. Check your connection and try again.")
     }
   }
+
   const invite = async () => {
-    await navigator.clipboard?.writeText(`${location.origin}/room/${roomId}`)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1800)
+    const shareUrl = `${window.location.origin}${window.location.pathname}#/room/${roomId}`
+    setInviteUrl(shareUrl)
+    setCopied(false)
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+    } catch {
+      setSendError("Copy wasn't available here. Select the invite link and copy it.")
+    }
   }
+
+  const leaveRoom = async () => {
+    if (leaving) return
+    setLeaving(true)
+    setSendError("")
+    try {
+      if (watchedSecondsRef.current > 0) {
+        if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
+        await recordWatchSession(
+          userId,
+          roomId,
+          movieUrl,
+          watchedSecondsRef.current,
+          sessionIdRef.current,
+        )
+      }
+      await Promise.all([
+        remove(ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)),
+        remove(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)),
+      ])
+      onLeave()
+    } catch {
+      setSendError("Your session couldn't be saved or you couldn't leave. Check the connection and retry.")
+      setLeaving(false)
+    }
+  }
+
   const latestReactions = useMemo(() => reactions.slice(-12), [reactions])
 
   return (
     <div className={`min-h-[100dvh] ${surface}`}>
       <header className="flex min-h-16 items-center justify-between gap-2 border-b hairline px-3 py-3 sm:px-6">
         <button
-          className="button-quiet flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold"
-          onClick={async () => {
-            await remove(
-              ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`),
-            )
-            onLeave()
-          }}
+          className="button-quiet focus-ring flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold"
+          disabled={leaving}
+          onClick={() => void leaveRoom()}
+          type="button"
         >
           <Icon name="arrow-left" size={15} />
-          <span>Leave</span>
+          <span>{leaving ? "Saving…" : "Leave room"}</span>
         </button>
         <div className="hidden text-sm font-bold sm:block">Room {roomId}</div>
         <div className="flex items-center gap-2">
           <button
-            className="button-quiet rounded-full border px-3 py-2 text-xs font-bold"
-            onClick={invite}
+            className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
+            onClick={() => void invite()}
+            type="button"
           >
-            {copied ? "Copied" : "Invite"}
+            Invite
           </button>
           <button
-            className="button-quiet h-9 w-9 rounded-full border"
+            className="button-quiet focus-ring h-10 w-10 rounded-full border"
             onClick={onToggleDark}
-            aria-label="Toggle theme"
+            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            type="button"
           >
             <Icon name={darkMode ? "sun" : "moon"} size={16} />
           </button>
         </div>
       </header>
+
       <main className="flex min-h-[calc(100dvh-64px)] flex-col lg:flex-row">
         <section className="relative min-h-[42dvh] flex-1 bg-[#10181d] sm:min-h-[58dvh]">
           <div className="absolute inset-0">
@@ -269,7 +447,7 @@ export default function WatchRoom({
                   This YouTube video can&apos;t be played here.
                 </p>
                 <a
-                  className="text-coral-light underline"
+                  className="focus-ring text-coral-light underline"
                   href={movieUrl}
                   target="_blank"
                   rel="noreferrer"
@@ -279,10 +457,12 @@ export default function WatchRoom({
               </div>
             )}
           </div>
-          <div className="absolute bottom-4 left-4 rounded-full bg-navy/90 px-3 py-2 text-xs text-ivory">
+          <div
+            aria-live="polite"
+            className="absolute bottom-4 left-4 rounded-full bg-navy/90 px-3 py-2 text-xs text-ivory"
+          >
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-moss" />
-            {onlineCount} watching ·{" "}
-            {playback.playing ? "Playing together" : "Paused together"}
+            {onlineCount} watching · {isPlaying ? "Playing together" : "Paused"}
           </div>
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
@@ -292,7 +472,8 @@ export default function WatchRoom({
                     key={emoji}
                     aria-label={`React ${emoji}`}
                     onClick={() => void sendReaction(emoji)}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[22px] transition hover:scale-125 hover:bg-white/10"
+                    className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[22px] transition hover:bg-white/10"
+                    type="button"
                   >
                     {emoji}
                   </button>
@@ -300,7 +481,8 @@ export default function WatchRoom({
                 <button
                   aria-label="Close reactions"
                   onClick={() => setShowReactions(false)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/80 transition hover:bg-white/25"
+                  className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/80"
+                  type="button"
                 >
                   ×
                 </button>
@@ -309,7 +491,8 @@ export default function WatchRoom({
               <button
                 aria-label="Open reactions"
                 onClick={() => setShowReactions(true)}
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#25292d]/95 text-2xl text-white shadow-2xl backdrop-blur-md transition hover:scale-105"
+                className="focus-ring flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#25292d]/95 text-2xl text-white shadow-2xl backdrop-blur-md"
+                type="button"
               >
                 +
               </button>
@@ -318,48 +501,54 @@ export default function WatchRoom({
           {latestReactions.map((reaction) => (
             <span
               key={reaction.id}
-              className="reaction-rise absolute bottom-24 right-1/2 text-3xl"
+              className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 text-3xl"
+              aria-hidden="true"
             >
               {reaction.emoji}
             </span>
           ))}
         </section>
+
         <aside className="flex w-full flex-col border-t hairline lg:w-[380px] lg:border-l lg:border-t-0">
           <div className="border-b hairline px-5 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="display-serif text-2xl">The conversation</h1>
-                <p className="text-sm text-muted-ink">
-                  {onlineCount < 2
-                    ? "Waiting for another person to join"
-                    : `${onlineCount} people are watching`}
-                </p>
-              </div>
-              <button
-                className="button-primary rounded-full px-4 py-2 text-sm font-bold"
-                onClick={invite}
-              >
-                {copied ? "Copied" : "Invite"}
-              </button>
-            </div>
+            <h1 className="display-serif text-2xl">The conversation</h1>
+            <p className="text-sm text-muted-ink" aria-live="polite">
+              {onlineCount < 2
+                ? "Waiting for another person to join"
+                : `${onlineCount} people are watching`}
+            </p>
           </div>
-          <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
+          {(roomError || sendError) && (
+            <div className="space-y-1 px-4 pt-3">
+              {roomError && (
+                <p className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral" role="alert">
+                  {roomError}
+                </p>
+              )}
+              {sendError && (
+                <p className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral" role="alert">
+                  {sendError}
+                </p>
+              )}
+            </div>
+          )}
+          <div className="min-h-[35dvh] max-h-[55dvh] flex-1 space-y-3 overflow-y-auto p-4 sm:p-5 lg:min-h-0 lg:max-h-none">
             {messages.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-ink">
-                Your conversation will appear here.
+                Your conversation will appear here. Say hello when you’re ready.
               </p>
             ) : (
               messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm ${
+                  className={`max-w-[88%] break-words rounded-2xl px-3 py-2 text-sm ${
                     message.uid === userId
                       ? "ml-auto bg-coral text-ivory"
                       : "bg-sand/60"
                   }`}
                 >
                   {message.text}
-                  <span className="mt-1 block text-[10px] opacity-60">
+                  <span className="mt-1 block text-[10px] opacity-70">
                     {new Date(message.createdAt).toLocaleTimeString([], {
                       hour: "numeric",
                       minute: "2-digit",
@@ -368,34 +557,92 @@ export default function WatchRoom({
                 </div>
               ))
             )}
+            <div ref={messageEndRef} />
           </div>
           <div className="border-t hairline p-3 sm:p-4">
             <div className="flex gap-2">
               <input
-                className="input-field rounded-2xl px-4 py-3 text-sm"
+                className="input-field focus-ring min-w-0 rounded-2xl px-4 py-3 text-sm"
                 value={text}
+                maxLength={500}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => {
                   if (
                     event.key === "Enter" &&
                     !event.nativeEvent.isComposing &&
                     event.keyCode !== 229
-                  )
+                  ) {
+                    event.preventDefault()
                     void sendMessage()
+                  }
                 }}
                 placeholder="Say something…"
                 aria-label="Message"
               />
               <button
-                className="button-primary rounded-2xl px-4 text-sm font-bold"
+                className="button-primary focus-ring rounded-2xl px-4 text-sm font-bold"
+                disabled={sending || !text.trim()}
                 onClick={() => void sendMessage()}
+                type="button"
               >
-                Send
+                {sending ? "Sending…" : "Send"}
               </button>
             </div>
           </div>
         </aside>
       </main>
+
+      {inviteUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setInviteUrl("")
+          }}
+        >
+          <section
+            aria-labelledby="invite-title"
+            aria-modal="true"
+            className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl"
+            role="dialog"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-2xl" id="invite-title">
+                Invite someone in
+              </h2>
+              <button
+                aria-label="Close invite dialog"
+                className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border"
+                onClick={() => setInviteUrl("")}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-muted-ink">
+              Share this link. Your guest will be taken to the room code.
+            </p>
+            <input
+              autoFocus
+              className="input-field focus-ring mt-5 rounded-xl px-3 py-3 text-sm"
+              onFocus={(event) => event.currentTarget.select()}
+              readOnly
+              value={inviteUrl}
+              aria-label="Room invite link"
+            />
+            <button
+              className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold"
+              onClick={() => void navigator.clipboard.writeText(inviteUrl).then(
+                () => setCopied(true),
+                () => setSendError("Select the invite link above and copy it."),
+              )}
+              type="button"
+            >
+              {copied ? "Link copied" : "Copy invite link"}
+            </button>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

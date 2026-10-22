@@ -1,7 +1,8 @@
 import { useState } from "react"
-import { get, ref, set } from "firebase/database"
+import { get, ref, set, update } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
 import { auth, realtimeDatabase } from "../lib/firebase"
+import { canonicalYoutubeUrl } from "../lib/youtube"
 interface Props {
   onCreateRoom: (id: string, url: string) => void
   onJoinRoom: (id: string, url: string) => void
@@ -9,6 +10,8 @@ interface Props {
   darkMode: boolean
   onToggleDark: () => void
   userId: string
+  initialRoomCode?: string
+  initialMovieUrl?: string
 }
 export default function CreateRoom({
   onCreateRoom,
@@ -17,10 +20,14 @@ export default function CreateRoom({
   darkMode,
   onToggleDark,
   userId,
+  initialRoomCode = "",
+  initialMovieUrl = "",
 }: Props) {
-  const [tab, setTab] = useState<"create" | "join">("create")
-  const [url, setUrl] = useState("")
-  const [code, setCode] = useState("")
+  const [tab, setTab] = useState<"create" | "join">(
+    initialRoomCode ? "join" : "create",
+  )
+  const [url, setUrl] = useState(initialMovieUrl)
+  const [code, setCode] = useState(initialRoomCode.toUpperCase())
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
@@ -29,17 +36,11 @@ export default function CreateRoom({
     setError("")
     const id =
       tab === "create"
-        ? crypto.randomUUID().replaceAll("-", "").slice(0, 6).toUpperCase()
-        : code
-            .replace(/[^a-z0-9]/gi, "")
-            .slice(0, 6)
-            .toUpperCase()
-    const youtube =
-      /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]{11}/.test(
-        url.trim(),
-      )
-    if (tab === "create" && !youtube) {
-      setError("Paste a valid YouTube watch link.")
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()
+        : code.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase()
+    const canonicalUrl = canonicalYoutubeUrl(url)
+    if (tab === "create" && !canonicalUrl) {
+      setError("Paste a valid YouTube video, Shorts, or embed link.")
       return
     }
     if (!/^[A-Z0-9]{6}$/.test(id)) {
@@ -54,21 +55,24 @@ export default function CreateRoom({
     setBusy(true)
     try {
       if (tab === "create") {
-        await set(ref(realtimeDatabase, `rooms/${id}`), {
-          movieUrl: url.trim(),
-          createdAt: Date.now(),
-          hostId: userId,
-          members: { [userId]: true },
-          public: {
-            movieUrl: url.trim(),
+        const createdAt = Date.now()
+        await update(ref(realtimeDatabase), {
+          [`rooms/${id}`]: {
+            movieUrl: canonicalUrl,
+            createdAt,
             hostId: userId,
-            createdAt: Date.now(),
+            members: { [userId]: true },
+            public: {
+              movieUrl: canonicalUrl,
+              hostId: userId,
+              createdAt,
+            },
           },
-        })
-        await set(ref(realtimeDatabase, `roomDirectory/${id}`), {
-          movieUrl: url.trim(),
-          hostId: userId,
-          createdAt: Date.now(),
+          [`roomDirectory/${id}`]: {
+            movieUrl: canonicalUrl,
+            hostId: userId,
+            createdAt,
+          },
         })
       } else {
         const roomRef = ref(realtimeDatabase, `roomDirectory/${id}`)
@@ -98,7 +102,7 @@ export default function CreateRoom({
         onJoinRoom(id, snap.val().movieUrl)
         return
       }
-      onCreateRoom(id, url.trim())
+      onCreateRoom(id, canonicalUrl!)
     } catch (error) {
       const codeError = error instanceof Error ? error.message : ""
       setError(
@@ -107,7 +111,7 @@ export default function CreateRoom({
           : codeError === "MEMBERSHIP_NOT_CONFIRMED"
             ? "Firebase did not confirm your membership. Deploy the latest database rules and try again."
             : codeError.includes("PERMISSION_DENIED")
-              ? "Firebase denied this room. Deploy the latest database rules, then try again."
+              ? "That room may be full, or Firebase denied access. Check the code and try again."
               : "Could not join this room. Check the code and try again.",
       )
     } finally {
@@ -138,12 +142,19 @@ export default function CreateRoom({
         </p>
         <h1 className="mt-5 text-6xl leading-[.9]">Make some room.</h1>
         <div className="soft-card mt-10 rounded-[28px] p-6 sm:p-9">
-          <div className="flex gap-5 border-b hairline">
+          <div
+            className="flex gap-5 border-b hairline"
+            role="tablist"
+            aria-label="Room action"
+          >
             {(["create", "join"] as const).map((item) => (
               <button
-                className={`pb-4 text-sm font-bold ${
+                aria-selected={tab === item}
+                className={`focus-ring pb-4 text-sm font-bold ${
                   tab === item ? "text-coral" : muted
                 }`}
+                role="tab"
+                type="button"
                 onClick={() => {
                   setTab(item)
                   setError("")
@@ -163,10 +174,13 @@ export default function CreateRoom({
                 YouTube link
               </label>
               <input
+                autoComplete="url"
                 className="input-field focus-ring mt-2 rounded-xl px-4 py-3.5"
                 id="movie-url"
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
+                placeholder="YouTube video, Shorts, or embed link"
+                required
+                type="url"
                 value={url}
               />
             </>
@@ -179,10 +193,15 @@ export default function CreateRoom({
                 Room code
               </label>
               <input
+                autoComplete="off"
                 className="input-field focus-ring mt-2 rounded-xl px-4 py-3.5 text-center font-mono text-xl uppercase tracking-[.3em]"
                 id="room-code"
+                inputMode="text"
                 maxLength={6}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="ABC123"
+                required
+                aria-label="Six-character room code"
                 value={code}
               />
             </>
