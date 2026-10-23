@@ -10,7 +10,9 @@ export function youtubeVideoIdFromUrl(value: string): string | null {
       return id && VIDEO_ID_PATTERN.test(id) ? id : null
     }
 
-    if (!["youtube.com", "m.youtube.com", "music.youtube.com"].includes(hostname))
+    if (
+      !["youtube.com", "m.youtube.com", "music.youtube.com"].includes(hostname)
+    )
       return null
 
     const path = parsed.pathname.split("/").filter(Boolean)

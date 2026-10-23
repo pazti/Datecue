@@ -168,7 +168,7 @@ export default function LandingPage({
             </button>
             <button
               className="button-dark focus-ring hidden rounded-full px-5 py-2.5 text-sm font-bold sm:block"
-              onClick={onGetStarted}
+              onClick={() => onGetStarted("")}
             >
               Open a room
             </button>
@@ -212,6 +212,7 @@ export default function LandingPage({
                   <input
                     id="landing-url"
                     className="input-field focus-ring rounded-full px-5 py-3.5 text-sm"
+                    maxLength={500}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste a film link to begin…"
                     autoComplete="url"
@@ -225,30 +226,21 @@ export default function LandingPage({
                     Create room <Icon name="arrow-right" size={16} />
                   </button>
                 </form>
-                <p className={`mt-3 text-xs ${muted}`}>
+                <p className="mt-3 text-xs text-ivory/70">
                   Sign in to create a private room. Invite someone in one tap.
                 </p>
               </div>
-              <div
-                className={`mt-12 flex items-center gap-3 border-t pt-5 hairline text-sm ${muted}`}
-              >
-                <div className="flex -space-x-2" aria-hidden="true">
-                  {["M", "A", "J", "S"].map((letter, index) => (
-                    <span
-                      className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${
-                        darkMode ? "border-night" : "border-ivory"
-                      } ${["bg-coral", "bg-moss", "bg-ochre", "bg-navy"][index]} text-[10px] font-bold text-ivory`}
-                      key={letter}
-                    >
-                      {letter}
-                    </span>
-                  ))}
+              <div className="mt-12 flex items-center gap-3 border-t pt-5 hairline text-sm text-ivory/70">
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-ivory"
+                  aria-hidden="true"
+                >
+                  <Icon name="users" size={17} />
                 </div>
                 <span>
-                  <strong className={darkMode ? "text-ivory" : "text-ink"}>
-                    12,400
-                  </strong>{" "}
-                  quiet movie nights started
+                  <strong className="text-ivory">Two people max</strong>
+                  {" · "}
+                  private room code
                 </span>
               </div>
             </div>
@@ -357,7 +349,7 @@ export default function LandingPage({
               </p>
               <button
                 className="button-dark focus-ring mt-8 inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold"
-                onClick={onGetStarted}
+                onClick={() => onGetStarted("")}
               >
                 Start a watch party <Icon name="arrow-right" size={16} />
               </button>
@@ -381,7 +373,7 @@ export default function LandingPage({
           <Logo compact dark={darkMode} />
           <span>Made for the people you’d rather be watching with.</span>
           <span className="mono text-[10px] uppercase tracking-[.15em]">
-            Datecue / 2024
+            Datecue / made for two
           </span>
         </div>
       </footer>

@@ -10,12 +10,16 @@ import { LiquidBackdrop } from "./components/LiquidHero"
 import { auth } from "./lib/firebase"
 
 type Screen = "landing" | "auth" | "home" | "create" | "watch"
-type Route = { screen: Screen; roomCode?: string }
+interface Route {
+  screen: Screen
+  roomCode?: string
+}
 
 function readRoute(): Route {
   const route = window.location.hash.replace(/^#\/?/, "")
   const roomMatch = route.match(/^room\/([a-z0-9]{6})$/i)
-  if (roomMatch) return { screen: "create", roomCode: roomMatch[1].toUpperCase() }
+  if (roomMatch)
+    return { screen: "create", roomCode: roomMatch[1].toUpperCase() }
   if (route === "auth") return { screen: "auth" }
   if (route === "home") return { screen: "home" }
   if (route === "create") return { screen: "create" }
@@ -24,7 +28,8 @@ function readRoute(): Route {
 
 function routeHash(screen: Screen, roomCode?: string) {
   if (screen === "landing") return "#/"
-  if (screen === "watch" && roomCode) return `#/room/${roomCode}`
+  if ((screen === "watch" || screen === "create") && roomCode)
+    return `#/room/${roomCode}`
   return `#/${screen}`
 }
 
@@ -42,7 +47,13 @@ export default function App() {
     initialRoute.roomCode ?? "",
   )
   const [pendingMovieUrl, setPendingMovieUrl] = useState("")
+  const [nextAfterAuth, setNextAfterAuth] = useState<"create" | null>(null)
   const authInitialized = useRef(false)
+  const screenRef = useRef(screen)
+
+  useEffect(() => {
+    screenRef.current = screen
+  }, [screen])
 
   useEffect(
     () =>
@@ -55,15 +66,25 @@ export default function App() {
           if (route.roomCode) setScreen(user ? "create" : "auth")
           else if (!user && ["home", "create", "watch"].includes(route.screen))
             setScreen("auth")
-          else if (user && route.screen === "auth") setScreen("home")
-        } else if (!user && ["home", "create", "watch"].includes(screen)) {
+          else if (user && route.screen === "auth") {
+            setScreen("home")
+            window.history.replaceState(
+              {},
+              "",
+              `${window.location.pathname}${window.location.search}#/home`,
+            )
+          }
+        } else if (
+          !user &&
+          ["home", "create", "watch"].includes(screenRef.current)
+        ) {
           setScreen("auth")
         }
       }),
-    [initialRoute, screen],
+    [initialRoute],
   )
 
-  const navigate = (next: Screen, code = roomId) => {
+  const navigate = (next: Screen, code = "") => {
     window.history.pushState(
       {},
       "",
@@ -99,6 +120,7 @@ export default function App() {
   const startCreating = (url = "") => {
     setPendingMovieUrl(url.trim())
     setPendingRoomCode("")
+    setNextAfterAuth(userId ? null : "create")
     navigate(userId ? "create" : "auth")
   }
 
@@ -117,10 +139,20 @@ export default function App() {
           {screen === "auth" && (
             <AuthPage
               {...theme}
-              onSuccess={() =>
-                navigate(pendingRoomCode || pendingMovieUrl ? "create" : "home")
-              }
-              onBack={() => navigate("landing")}
+              onSuccess={() => {
+                const next =
+                  pendingRoomCode || pendingMovieUrl || nextAfterAuth
+                    ? "create"
+                    : "home"
+                setNextAfterAuth(null)
+                navigate(next, pendingRoomCode || undefined)
+              }}
+              onBack={() => {
+                setPendingRoomCode("")
+                setPendingMovieUrl("")
+                setNextAfterAuth(null)
+                navigate("landing")
+              }}
             />
           )}
           {screen === "home" && userId && (
@@ -150,6 +182,7 @@ export default function App() {
           )}
           {screen === "create" && userId && (
             <CreateRoom
+              key={`${pendingRoomCode}:${pendingMovieUrl}`}
               {...theme}
               userId={userId}
               initialRoomCode={pendingRoomCode}

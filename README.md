@@ -1,12 +1,12 @@
 # Datecue
 
-Datecue is a polished frontend prototype for private watch parties.
+Datecue is a private watch-party app built with React, Vite, and Firebase.
 
 **Same movie. Same second. Same reactions.**
 
 It gives two people a shared cinema for synchronized video, timestamped chat, and lightweight reactions.
 
-This repository currently contains the complete frontend experience. The product is intentionally ready for a backend connection later; demo state is local to the browser session and no backend services are included.
+Authenticated users can create and join rooms backed by Firebase Realtime Database. Rooms support synchronized YouTube playback, live presence, chat, reactions, and saved watch history.
 
 ## Run locally
 
@@ -27,21 +27,22 @@ pnpm preview
 ## Frontend surface
 
 - **Landing page** — product introduction, watch preview, feature story, and primary room CTA.
-- **Create / join room** — a clear two-mode flow for pasting a video URL or entering a room code.
-- **Watch room** — cinematic player surface, playback controls, sync state, participant list, room invite action, live chat, timestamps, and reactions.
+- **Create / join room** — a two-mode flow for pasting a YouTube URL or entering a room code. Invite links preserve the room code through sign-in.
+- **Watch room** — synchronized playback, live presence, chat, timestamps, and reactions.
+- **Home** — saved rooms, total watch time, and manageable notifications.
 - **Theme toggle** — light and dark presentation modes are available across all screens.
 
-## Backend handoff
+## Firebase setup
 
-The UI currently uses local mock state so the full product flow can be demonstrated without a server. The places that should connect to a backend are documented in [`replit.md`](./replit.md).
+Firebase web configuration is read from `VITE_FIREBASE_*` environment variables. The repository includes fallback values for the Firebase project used by the original import; set all configuration values for your own Firebase project before deploying a fork.
 
-Recommended backend responsibilities:
+Enable Email/Password authentication and Realtime Database in that Firebase project. Room access rules are in [`database.rules.json`](./database.rules.json), referenced by [`firebase.json`](./firebase.json). Deploy those rules before testing room playback, presence, chat, and reactions:
 
-1. Create a room and return a durable room code.
-2. Validate and persist the video source.
-3. Broadcast playback state (`play`, `pause`, `seek`, and current time) to connected participants.
-4. Broadcast presence, chat messages, reactions, and typing state.
-5. Replace the demo values in `src/pages/WatchRoom.tsx` with API/WebSocket data while preserving the existing UI states.
+```bash
+firebase deploy --only database
+```
+
+The Firebase CLI must be authenticated and pointed at the intended project. The Firebase web API key is client configuration, not a server secret; restrict it in Firebase/Google Cloud settings as appropriate.
 
 ## Project structure
 

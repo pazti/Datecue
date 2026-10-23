@@ -1,4 +1,11 @@
-import { ref, set, remove, onValue } from "firebase/database"
+import {
+  ref,
+  set,
+  remove,
+  onValue,
+  push,
+  serverTimestamp,
+} from "firebase/database"
 import { realtimeDatabase } from "./firebase"
 
 export interface Notification {
@@ -15,15 +22,13 @@ export async function createNotification(
   userId: string,
   notification: Omit<Notification, "id" | "createdAt">,
 ) {
-  const notifRef = ref(realtimeDatabase, `users/${userId}/notifications`)
-  const timestamp = Date.now()
-  return set(
-    ref(realtimeDatabase, `users/${userId}/notifications/${timestamp}`),
-    {
-      ...notification,
-      createdAt: timestamp,
-    },
+  const notificationRef = push(
+    ref(realtimeDatabase, `users/${userId}/notifications`),
   )
+  return set(notificationRef, {
+    ...notification,
+    createdAt: serverTimestamp(),
+  })
 }
 
 export async function markNotificationAsRead(

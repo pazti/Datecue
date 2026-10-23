@@ -36,8 +36,7 @@
           ".write": false,
           ".validate": "newData.hasChildren(['movieUrl', 'hostId', 'createdAt']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('hostId').isString() && newData.child('createdAt').isNumber()"
         },
-        ".write": "auth != null && !data.exists() && newData.child('hostId').val() == auth.uid && newData.child('members').child(auth.uid).val() == true",
-        ".validate": "newData.hasChildren(['movieUrl', 'createdAt', 'hostId', 'members']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').isString() && newData.child('hostId').val() == auth.uid && newData.child('members').child(auth.uid).val() == true",
+        ".write": "auth != null && !data.exists() && newData.hasChildren(['movieUrl', 'createdAt', 'hostId', 'members']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').val() == auth.uid && newData.child('members').child(auth.uid).val() == true",
         "members": {
           "$uid": {
             ".read": "auth != null && $uid == auth.uid",
@@ -59,6 +58,7 @@
         },
         "messages": {
           ".read": "auth != null && data.parent().child('members').child(auth.uid).val() == true",
+          ".indexOn": ["createdAt"],
           "$messageId": {
             ".write": "auth != null && data.parent().parent().child('members').child(auth.uid).val() == true && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && newData.exists() && data.child('uid').val() == auth.uid))",
             ".validate": "newData.hasChildren(['uid', 'text', 'createdAt']) && newData.child('uid').val() == auth.uid && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
@@ -66,8 +66,9 @@
         },
         "reactions": {
           ".read": "auth != null && data.parent().child('members').child(auth.uid).val() == true",
+          ".indexOn": ["createdAt"],
           "$reactionId": {
-            ".write": "auth != null && data.parent().parent().child('members').child(auth.uid).val() == true && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid))",
+            ".write": "auth != null && ((!data.exists() && data.parent().parent().child('members').child(auth.uid).val() == true && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid))",
             ".validate": "newData.hasChildren(['uid', 'emoji', 'createdAt']) && newData.child('uid').val() == auth.uid && newData.child('emoji').isString() && (newData.child('emoji').val() == '👍' || newData.child('emoji').val() == '❤️' || newData.child('emoji').val() == '😂' || newData.child('emoji').val() == '😮' || newData.child('emoji').val() == '😢' || newData.child('emoji').val() == '🙏' || newData.child('emoji').val() == '👋') && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
           }
         },

@@ -42,7 +42,8 @@ export default function HomePage({
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [roomCount, setRoomCount] = useState(0)
   const [totalSeconds, setTotalSeconds] = useState(0)
-  const [notifications, setNotifications] = useState<Record<string, HomeNotification>>({})
+  const [notifications, setNotifications] =
+    useState<Record<string, HomeNotification>>({})
   const [showNotifications, setShowNotifications] = useState(false)
   const [error, setError] = useState("")
   const [logoutBusy, setLogoutBusy] = useState(false)
@@ -56,7 +57,7 @@ export default function HomePage({
           const allHistory = Object.entries(value.history ?? {})
             .map(([roomId, item]) => ({
               roomId,
-              ...(item as Omit<HistoryItem, "roomId">),
+              ...item as Omit<HistoryItem, "roomId">,
             }))
             .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
           setTotalSeconds(value.stats?.watchSeconds ?? 0)
@@ -65,12 +66,17 @@ export default function HomePage({
           setNotifications(value.notifications ?? {})
           setError("")
         },
-        () => setError("Your home data couldn't load. Check your connection and try again."),
+        () =>
+          setError(
+            "Your home data couldn't load. Check your connection and try again.",
+          ),
       ),
     [userId],
   )
 
-  const unread = Object.values(notifications).filter((item) => !item.read).length
+  const unread = Object.values(notifications).filter(
+    (item) => !item.read,
+  ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
 
@@ -80,14 +86,13 @@ export default function HomePage({
       await joinRoom(item.roomId, userId)
       onOpenRoom(item.roomId, item.movieUrl)
     } catch {
-      setError("That room is no longer available. Start a new room or join with a current code.")
+      setError(
+        "That room is no longer available. Start a new room or join with a current code.",
+      )
     }
   }
 
-  const changeNotification = async (
-    id: string,
-    action: "read" | "delete",
-  ) => {
+  const changeNotification = async (id: string, action: "read" | "delete") => {
     setError("")
     try {
       if (action === "read") await markNotificationAsRead(userId, id)
@@ -103,7 +108,9 @@ export default function HomePage({
     try {
       await onLogout()
     } catch {
-      setError("You couldn't be signed out. Check your connection and try again.")
+      setError(
+        "You couldn't be signed out. Check your connection and try again.",
+      )
     } finally {
       setLogoutBusy(false)
     }
@@ -115,7 +122,9 @@ export default function HomePage({
         <Logo dark={darkMode} />
         <div className="flex items-center gap-2">
           <button
-            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={
+              darkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
             className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border"
             onClick={onToggleDark}
             type="button"
@@ -161,15 +170,23 @@ export default function HomePage({
         </div>
 
         {error && (
-          <p className="mt-6 rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral" role="alert">
+          <p
+            className="mt-6 rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral"
+            role="alert"
+          >
             {error}
           </p>
         )}
 
-        <section className="mt-8 grid gap-3 sm:grid-cols-3" aria-label="Your activity">
+        <section
+          className="mt-8 grid gap-3 sm:grid-cols-3"
+          aria-label="Your activity"
+        >
           <div className="soft-card rounded-2xl p-5">
             <p className={`text-xs uppercase ${muted}`}>Total watch time</p>
-            <p className="mt-2 text-3xl font-bold">{formatDuration(totalSeconds)}</p>
+            <p className="mt-2 text-3xl font-bold">
+              {formatDuration(totalSeconds)}
+            </p>
           </div>
           <div className="soft-card rounded-2xl p-5">
             <p className={`text-xs uppercase ${muted}`}>Rooms watched</p>
@@ -253,7 +270,9 @@ export default function HomePage({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-3xl">Recent rooms</h2>
             <span className={`text-sm ${muted}`}>
-              {roomCount ? `${roomCount} saved` : "Your watched rooms appear here"}
+              {roomCount
+                ? `${roomCount} saved`
+                : "Your watched rooms appear here"}
             </span>
           </div>
           <div className="mt-4 grid gap-3">

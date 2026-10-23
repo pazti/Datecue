@@ -1,8 +1,11 @@
-import { useState } from "react"
-import { get, ref, set, update } from "firebase/database"
+import { useState, type FormEvent } from "react"
+import { get, ref, serverTimestamp, set, update } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
 import { auth, realtimeDatabase } from "../lib/firebase"
 import { canonicalYoutubeUrl } from "../lib/youtube"
+
+const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
 interface Props {
   onCreateRoom: (id: string, url: string) => void
   onJoinRoom: (id: string, url: string) => void
@@ -30,14 +33,22 @@ export default function CreateRoom({
   const [code, setCode] = useState(initialRoomCode.toUpperCase())
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  let roomLookupTimeout = 0
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
-  const submit = async () => {
+  const submit = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
     setError("")
     const id =
       tab === "create"
-        ? crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()
-        : code.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase()
+        ? Array.from(
+            crypto.getRandomValues(new Uint8Array(6)),
+            (value) => ROOM_CODE_ALPHABET[value & 31],
+          ).join("")
+        : code
+            .replace(/[^a-z0-9]/gi, "")
+            .slice(0, 6)
+            .toUpperCase()
     const canonicalUrl = canonicalYoutubeUrl(url)
     if (tab === "create" && !canonicalUrl) {
       setError("Paste a valid YouTube video, Shorts, or embed link.")
@@ -55,7 +66,7 @@ export default function CreateRoom({
     setBusy(true)
     try {
       if (tab === "create") {
-        const createdAt = Date.now()
+        const createdAt = serverTimestamp()
         await update(ref(realtimeDatabase), {
           [`rooms/${id}`]: {
             movieUrl: canonicalUrl,
@@ -78,13 +89,15 @@ export default function CreateRoom({
         const roomRef = ref(realtimeDatabase, `roomDirectory/${id}`)
         const snap = await Promise.race([
           get(roomRef),
-          new Promise<never>((_, reject) =>
-            window.setTimeout(
-              () => reject(new Error("ROOM_LOOKUP_TIMEOUT")),
-              8000,
-            ),
+          new Promise<never>(
+            (_, reject) =>
+              (roomLookupTimeout = window.setTimeout(
+                () => reject(new Error("ROOM_LOOKUP_TIMEOUT")),
+                8000,
+              )),
           ),
         ])
+        window.clearTimeout(roomLookupTimeout)
         if (!snap.exists() || !snap.val()?.movieUrl) {
           setError("That room does not exist or is no longer available.")
           return
@@ -111,10 +124,15 @@ export default function CreateRoom({
           : codeError === "MEMBERSHIP_NOT_CONFIRMED"
             ? "Firebase did not confirm your membership. Deploy the latest database rules and try again."
             : codeError.includes("PERMISSION_DENIED")
-              ? "That room may be full, or Firebase denied access. Check the code and try again."
-              : "Could not join this room. Check the code and try again.",
+              ? tab === "join"
+                ? "That room may be full, or Firebase denied access. Check the code and try again."
+                : "Firebase denied room creation. Check the database rules and try again."
+              : tab === "join"
+                ? "Could not join this room. Check the code and try again."
+                : "Room creation failed. Check your connection and try again.",
       )
     } finally {
+      window.clearTimeout(roomLookupTimeout)
       setBusy(false)
     }
   }
@@ -141,19 +159,21 @@ export default function CreateRoom({
           a room for two / setup
         </p>
         <h1 className="mt-5 text-6xl leading-[.9]">Make some room.</h1>
-        <div className="soft-card mt-10 rounded-[28px] p-6 sm:p-9">
+        <form
+          className="soft-card mt-10 rounded-[28px] p-6 sm:p-9"
+          onSubmit={(event) => void submit(event)}
+        >
           <div
             className="flex gap-5 border-b hairline"
-            role="tablist"
-            aria-label="Room action"
+            role="group"
+            aria-label="Choose whether to create or join a room"
           >
             {(["create", "join"] as const).map((item) => (
               <button
-                aria-selected={tab === item}
+                aria-pressed={tab === item}
                 className={`focus-ring pb-4 text-sm font-bold ${
                   tab === item ? "text-coral" : muted
                 }`}
-                role="tab"
                 type="button"
                 onClick={() => {
                   setTab(item)
@@ -177,6 +197,7 @@ export default function CreateRoom({
                 autoComplete="url"
                 className="input-field focus-ring mt-2 rounded-xl px-4 py-3.5"
                 id="movie-url"
+                maxLength={500}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="YouTube video, Shorts, or embed link"
                 required
@@ -214,7 +235,7 @@ export default function CreateRoom({
           <button
             className="button-primary focus-ring mt-8 w-full rounded-xl px-5 py-4 text-sm font-bold"
             disabled={busy}
-            onClick={submit}
+            type="submit"
           >
             {busy
               ? "Connecting…"
@@ -223,7 +244,7 @@ export default function CreateRoom({
                 : "Join private room"}{" "}
             <Icon name="arrow-right" size={16} />
           </button>
-        </div>
+        </form>
       </main>
     </div>
   )

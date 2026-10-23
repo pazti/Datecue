@@ -35,7 +35,7 @@ export function youtubeIdFromUrl(value: string) {
 }
 
 export function formatDuration(seconds: number) {
-  const safe = Math.max(0, Math.floor(seconds))
+  const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
   const hours = Math.floor(safe / 3600)
   const minutes = Math.floor((safe % 3600) / 60)
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`

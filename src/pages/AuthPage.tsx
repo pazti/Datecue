@@ -44,11 +44,21 @@ export default function AuthPage({
       setError(
         code.includes("invalid-credential") || code.includes("wrong-password")
           ? "Email or password is incorrect."
-          : code.includes("email-already-in-use")
-            ? "An account already exists for this email."
-            : code.includes("weak-password")
-              ? "Use a password with at least 6 characters."
-              : "Unable to authenticate. Check your details and try again.",
+          : code.includes("user-not-found")
+            ? "No account was found for that email."
+            : code.includes("email-already-in-use")
+              ? "An account already exists for this email."
+              : code.includes("invalid-email")
+                ? "Enter a valid email address."
+                : code.includes("weak-password")
+                  ? "Use a password with at least 6 characters."
+                  : code.includes("network-request-failed")
+                    ? "Connection failed. Check your internet and try again."
+                    : code.includes("too-many-requests")
+                      ? "Too many attempts. Wait a moment and try again."
+                      : code.includes("operation-not-allowed")
+                        ? "Email sign-in is disabled for this Firebase project."
+                        : "Unable to authenticate. Check your details and try again.",
       )
     } finally {
       setBusy(false)
@@ -66,7 +76,9 @@ export default function AuthPage({
       await sendPasswordResetEmail(auth, email.trim())
       setResetSent(true)
     } catch {
-      setError("We couldn't send a reset link. Check the email address and try again.")
+      setError(
+        "We couldn't send a reset link. Check the email address and try again.",
+      )
     } finally {
       setBusy(false)
     }
@@ -114,6 +126,7 @@ export default function AuthPage({
                 className={`focus-ring relative -mb-px px-4 pb-4 pt-1 text-sm font-bold capitalize ${
                   mode === item ? "text-coral" : muted
                 }`}
+                aria-pressed={mode === item}
                 key={item}
                 onClick={() => {
                   setMode(item)
@@ -183,7 +196,7 @@ export default function AuthPage({
           />
           {error && (
             <p
-              aria-live="polite"
+              role="alert"
               className="mt-4 rounded-xl bg-coral/10 px-3 py-2 text-sm text-coral"
             >
               {error}

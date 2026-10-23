@@ -82,7 +82,7 @@ h1, h2, h3, h4 {
 .button-primary,
 .button-dark,
 .button-quiet {
-  transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  transition: transform 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 .button-primary:hover, .button-dark:hover, .button-quiet:hover { transform: translateY(-2px); }
 .button-primary:active, .button-dark:active, .button-quiet:active { transform: translateY(0); }
@@ -142,10 +142,6 @@ h1, h2, h3, h4 {
 .app-content .bg-paper { background-color: rgba(251, 247, 240, .88); }
 .dark .liquid-backdrop { opacity: .42; }
 @media (prefers-reduced-motion: reduce) { .liquid-backdrop { display: none; } }
-@media (prefers-reduced-motion: no-preference) {
-  .liquid-logo-mark { animation: logo-liquid 5s ease-in-out infinite; }
-}
-@keyframes logo-liquid { 0%,100% { border-radius: 11px; transform: rotate(-10deg) scale(1); } 50% { border-radius: 48%; transform: rotate(8deg) scale(1.06); } }
 
 .soft-card {
   border: 1px solid var(--line);
@@ -159,7 +155,7 @@ h1, h2, h3, h4 {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.58);
   color: #17232b;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 .input-field:focus {
   outline: none;
@@ -170,30 +166,21 @@ h1, h2, h3, h4 {
 .dark .input-field { background: rgba(255,255,255,.07); color: #f6f0e7; }
 .dark .input-field:focus { background: rgba(255,255,255,.1); }
 
-.reveal { animation: reveal 420ms cubic-bezier(.2,.75,.25,1) both; }
-.reveal-delay-1 { animation-delay: 110ms; }
-.reveal-delay-2 { animation-delay: 220ms; }
-.reveal-delay-3 { animation-delay: 340ms; }
-.reveal-delay-4 { animation-delay: 470ms; }
+.reveal { animation: reveal 280ms cubic-bezier(.2,.75,.25,1) both; }
+.reveal-delay-1 { animation-delay: 60ms; }
+.reveal-delay-2 { animation-delay: 120ms; }
+.reveal-delay-3 { animation-delay: 180ms; }
+.reveal-delay-4 { animation-delay: 240ms; }
 @keyframes reveal {
   from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
-}
-@keyframes drift {
-  0%, 100% { transform: translateY(0) rotate(-2deg); }
-  50% { transform: translateY(-10px) rotate(2deg); }
 }
 @keyframes rise {
   from { opacity: 0; transform: translateY(20px) scale(.94); }
   to { opacity: 1; transform: translateY(-130px) scale(1); }
 }
-.drift { animation: drift 7s ease-in-out infinite; }
 .landing-phone { animation: none; }
-.reaction-rise { animation: rise 900ms ease-out forwards; }
-@keyframes landing-float {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-8px) rotate(.6deg); }
-}
+.reaction-rise { animation: rise 650ms ease-out forwards; }
 
 .movie-surface {
   background:

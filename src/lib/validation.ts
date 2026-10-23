@@ -10,12 +10,14 @@ export function isValidYoutubeUrl(url: string): boolean {
 }
 
 export function sanitizeMessage(text: string): string {
-  return text.slice(0, MAX_MESSAGE_LENGTH)
+  return text.slice(0, MAX_MESSAGE_LENGTH).replace(/[\uD800-\uDBFF]$/, "")
 }
 
 export function isValidMessage(text: string): boolean {
   const trimmed = text.trim()
-  return trimmed.length >= MIN_MESSAGE_LENGTH && trimmed.length <= MAX_MESSAGE_LENGTH
+  return (
+    trimmed.length >= MIN_MESSAGE_LENGTH && trimmed.length <= MAX_MESSAGE_LENGTH
+  )
 }
 
 export function isValidReaction(emoji: string): boolean {
@@ -23,20 +25,23 @@ export function isValidReaction(emoji: string): boolean {
   return VALID_REACTIONS.includes(emoji)
 }
 
-export function validatePlaybackState(state: any): boolean {
+export function validatePlaybackState(state: unknown): boolean {
+  if (!state || typeof state !== "object") return false
+  const value = state as Record<string, unknown>
   return (
-    typeof state.playing === "boolean" &&
-    typeof state.currentTime === "number" &&
-    state.currentTime >= 0 &&
-    state.currentTime <= 86400 &&
-    typeof state.hostId === "string"
+    typeof value.playing === "boolean" &&
+    typeof value.currentTime === "number" &&
+    Number.isFinite(value.currentTime) &&
+    value.currentTime >= 0 &&
+    value.currentTime <= 86400 &&
+    typeof value.hostId === "string"
   )
 }
 
 export function sanitizeUrl(url: string): string {
   try {
     const parsed = new URL(url)
-    return parsed.href
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : ""
   } catch {
     return ""
   }

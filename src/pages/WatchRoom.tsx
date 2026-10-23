@@ -8,6 +8,7 @@ import {
   query,
   ref,
   remove,
+  serverTimestamp,
   set,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
@@ -53,6 +54,7 @@ const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "👋"]
 const MAX_VISIBLE_MESSAGES = 100
 const MAX_VISIBLE_REACTIONS = 30
 const REACTION_LIFETIME_MS = 15_000
+const WATCH_SAVE_ERROR = "Watch time hasn't synced yet; we'll retry."
 
 export default function WatchRoom({
   onLeave,
@@ -64,7 +66,9 @@ export default function WatchRoom({
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Reaction[]>([])
-  const [presence, setPresence] = useState<Record<string, { online?: boolean }>>({})
+  const [presence, setPresence] = useState<Record<string, {
+    online?: boolean
+  }>>({})
   const [playback, setPlayback] = useState<Playback>({})
   const [isPlaying, setIsPlaying] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
@@ -78,41 +82,54 @@ export default function WatchRoom({
   const [sending, setSending] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
-  const playbackRef = useRef<Playback>({})
   const roomHostRef = useRef<string | null>(null)
+  const membershipCleanupTimerRef = useRef(0)
   const isPlayingRef = useRef(false)
   const lastPublishAtRef = useRef(0)
-  const hostSampleRef = useRef<{ time: number; at: number; playing: boolean } | null>(
-    null,
-  )
+  const hostSampleRef = useRef<{
+    time: number
+    at: number
+    playing: boolean
+  } | null>(null)
   const watchedSecondsRef = useRef(0)
+  const savedWatchSecondsRef = useRef(0)
   const sessionIdRef = useRef("")
+  if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
   const messageEndRef = useRef<HTMLDivElement>(null)
   const videoId = youtubeIdFromUrl(movieUrl)
-  const onlineCount = Object.values(presence).filter((item) => item.online).length
+  const onlineCount = Object.values(presence).filter(
+    (item) => item.online,
+  ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
 
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
-      if (roomHostRef.current !== userId || !Number.isFinite(currentTime)) return
+      if (roomHostRef.current !== userId || !Number.isFinite(currentTime))
+        return
       const updatedAt = Date.now()
       try {
         await set(ref(realtimeDatabase, `rooms/${roomId}/playback`), {
           playing,
           currentTime: Math.max(0, currentTime),
-          updatedAt,
+          updatedAt: serverTimestamp(),
           hostId: userId,
         })
         lastPublishAtRef.current = updatedAt
       } catch {
-        setRoomError("Playback couldn't sync. Check the room's Firebase rules and your connection.")
+        setRoomError(
+          "Playback couldn't sync. Check the room's Firebase rules and your connection.",
+        )
       }
     },
     [roomId, userId],
   )
 
   useEffect(() => {
-    const presenceRef = ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)
+    window.clearTimeout(membershipCleanupTimerRef.current)
+    const presenceRef = ref(
+      realtimeDatabase,
+      `rooms/${roomId}/presence/${userId}`,
+    )
     const memberRef = ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)
     const messagesQuery = query(
       ref(realtimeDatabase, `rooms/${roomId}/messages`),
@@ -125,9 +142,13 @@ export default function WatchRoom({
       limitToLast(MAX_VISIBLE_REACTIONS),
     )
     const fail = () =>
-      setRoomError("Room updates are unavailable. Check the Firebase rules and try again.")
+      setRoomError(
+        "Room updates are unavailable. Check the Firebase rules and try again.",
+      )
 
-    void set(presenceRef, { online: true, updatedAt: Date.now() }).catch(fail)
+    void set(presenceRef, { online: true, updatedAt: serverTimestamp() }).catch(
+      fail,
+    )
     void onDisconnect(presenceRef).remove().catch(fail)
     void onDisconnect(memberRef).remove().catch(fail)
 
@@ -148,7 +169,6 @@ export default function WatchRoom({
         ref(realtimeDatabase, `rooms/${roomId}/playback`),
         (snap) => {
           const value = snap.val() ?? {}
-          playbackRef.current = value
           setPlayback(value)
         },
         fail,
@@ -158,7 +178,7 @@ export default function WatchRoom({
         (snap) => {
           setMessages(
             Object.entries(snap.val() ?? {})
-              .map(([id, value]) => ({ id, ...(value as Omit<Message, "id">) }))
+              .map(([id, value]) => ({ id, ...value as Omit<Message, "id"> }))
               .sort((a, b) => a.createdAt - b.createdAt),
           )
         },
@@ -168,8 +188,10 @@ export default function WatchRoom({
         reactionsQuery,
         (snap) => {
           const recent = Object.entries(snap.val() ?? {})
-            .map(([id, value]) => ({ id, ...(value as Omit<Reaction, "id">) }))
-            .filter((item) => Date.now() - item.createdAt < REACTION_LIFETIME_MS)
+            .map(([id, value]) => ({ id, ...value as Omit<Reaction, "id"> }))
+            .filter(
+              (item) => Date.now() - item.createdAt < REACTION_LIFETIME_MS,
+            )
           setReactions(recent)
           for (const [id, value] of Object.entries(snap.val() ?? {})) {
             const reaction = value as Reaction
@@ -177,7 +199,9 @@ export default function WatchRoom({
               reaction.uid === userId &&
               Date.now() - reaction.createdAt >= REACTION_LIFETIME_MS
             ) {
-              void remove(ref(realtimeDatabase, `rooms/${roomId}/reactions/${id}`))
+              void remove(
+                ref(realtimeDatabase, `rooms/${roomId}/reactions/${id}`),
+              )
             }
           }
         },
@@ -187,8 +211,18 @@ export default function WatchRoom({
     return () => {
       stops.forEach((stop) => stop())
       void remove(presenceRef)
+      void recordWatchSession(
+        userId,
+        roomId,
+        movieUrl,
+        watchedSecondsRef.current,
+        sessionIdRef.current,
+      ).catch(() => setRoomError(WATCH_SAVE_ERROR))
+      membershipCleanupTimerRef.current = window.setTimeout(() => {
+        void remove(memberRef)
+      }, 0)
     }
-  }, [roomId, userId])
+  }, [movieUrl, roomId, userId])
 
   useEffect(() => {
     setVideoError(false)
@@ -199,6 +233,7 @@ export default function WatchRoom({
     let script: HTMLScriptElement | null = null
     let previousReady: (() => void) | undefined
     let readyCallback: (() => void) | undefined
+    let scriptError: (() => void) | undefined
 
     const createPlayer = () => {
       if (!window.YT?.Player) return
@@ -217,7 +252,9 @@ export default function WatchRoom({
           onReady: () => setPlayerReady(true),
           onError: () => {
             setVideoError(true)
-            setRoomError("YouTube couldn't play this video. It may be restricted from embedding.")
+            setRoomError(
+              "YouTube couldn't play this video. It may be restricted from embedding.",
+            )
           },
           onStateChange: (event: any) => {
             if (![0, 1, 2].includes(event.data)) return
@@ -246,15 +283,14 @@ export default function WatchRoom({
         createPlayer()
       }
       window.onYouTubeIframeAPIReady = readyCallback
-      script.addEventListener(
-        "error",
-        () => {
-          window.clearTimeout(timeout)
-          setVideoError(true)
-          setRoomError("The YouTube player couldn't load. Check your connection and try again.")
-        },
-        { once: true },
-      )
+      scriptError = () => {
+        window.clearTimeout(timeout)
+        setVideoError(true)
+        setRoomError(
+          "The YouTube player couldn't load. Check your connection and try again.",
+        )
+      }
+      script.addEventListener("error", scriptError, { once: true })
       timeout = window.setTimeout(() => {
         setVideoError(true)
         setRoomError("The YouTube player took too long to load.")
@@ -263,6 +299,8 @@ export default function WatchRoom({
 
     return () => {
       window.clearTimeout(timeout)
+      if (script && scriptError)
+        script.removeEventListener("error", scriptError)
       if (readyCallback && window.onYouTubeIframeAPIReady === readyCallback)
         window.onYouTubeIframeAPIReady = previousReady
       playerRef.current?.destroy?.()
@@ -273,12 +311,15 @@ export default function WatchRoom({
   }, [roomId, videoId, publishPlayback])
 
   useEffect(() => {
-    if (!playerReady || !playback.updatedAt || playback.hostId === userId) return
+    if (!playerReady || !playback.updatedAt || playback.hostId === userId)
+      return
     const player = playerRef.current
     if (!player) return
     const target =
       (playback.currentTime ?? 0) +
-      (playback.playing ? Math.max(0, Date.now() - playback.updatedAt) / 1000 : 0)
+      (playback.playing
+        ? Math.max(0, Date.now() - playback.updatedAt) / 1000
+        : 0)
     const currentTime = player.getCurrentTime?.() ?? 0
     if (Math.abs(currentTime - target) > 1.5) player.seekTo?.(target, true)
     isPlayingRef.current = Boolean(playback.playing)
@@ -292,6 +333,31 @@ export default function WatchRoom({
     }, 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      const seconds = Math.floor(watchedSecondsRef.current)
+      if (seconds <= savedWatchSecondsRef.current || !sessionIdRef.current)
+        return
+      try {
+        await recordWatchSession(
+          userId,
+          roomId,
+          movieUrl,
+          seconds,
+          sessionIdRef.current,
+        )
+        savedWatchSecondsRef.current = Math.max(
+          savedWatchSecondsRef.current,
+          seconds,
+        )
+        setRoomError((current) => (current === WATCH_SAVE_ERROR ? "" : current))
+      } catch {
+        setRoomError(WATCH_SAVE_ERROR)
+      }
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [movieUrl, roomId, userId])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -308,7 +374,8 @@ export default function WatchRoom({
           previous.time + (previous.playing ? (now - previous.at) / 1000 : 0)
         const wasSeeked = Math.abs(currentTime - expected) > 1.5
         const heartbeatDue = playing && now - lastPublishAtRef.current >= 5000
-        if (wasSeeked || heartbeatDue) void publishPlayback(playing, currentTime)
+        if (wasSeeked || heartbeatDue)
+          void publishPlayback(playing, currentTime)
       }
 
       hostSampleRef.current = { time: currentTime, at: now, playing }
@@ -320,7 +387,16 @@ export default function WatchRoom({
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: "end" })
-  }, [messages.length])
+  }, [messages[messages.length - 1]?.id])
+
+  useEffect(() => {
+    if (!inviteUrl) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setInviteUrl("")
+    }
+    window.addEventListener("keydown", closeOnEscape)
+    return () => window.removeEventListener("keydown", closeOnEscape)
+  }, [inviteUrl])
 
   const sendMessage = async () => {
     const value = sanitizeMessage(text.trim())
@@ -334,11 +410,13 @@ export default function WatchRoom({
       await push(ref(realtimeDatabase, `rooms/${roomId}/messages`), {
         uid: userId,
         text: value,
-        createdAt: Date.now(),
+        createdAt: serverTimestamp(),
       })
       setText("")
     } catch {
-      setSendError("Message failed to send. Check your connection and try again.")
+      setSendError(
+        "Message failed to send. Check your connection and try again.",
+      )
     } finally {
       setSending(false)
     }
@@ -348,16 +426,27 @@ export default function WatchRoom({
     if (!isValidReaction(emoji)) return
     setSendError("")
     try {
-      const reactionRef = push(ref(realtimeDatabase, `rooms/${roomId}/reactions`))
-      await set(reactionRef, { uid: userId, emoji, createdAt: Date.now() })
+      const reactionRef = push(
+        ref(realtimeDatabase, `rooms/${roomId}/reactions`),
+      )
+      await onDisconnect(reactionRef).remove()
+      await set(reactionRef, {
+        uid: userId,
+        emoji,
+        createdAt: serverTimestamp(),
+      })
       setShowReactions(false)
       window.setTimeout(() => {
         void remove(reactionRef).catch(() => {
-          setRoomError("An old reaction couldn't be cleared. It will be hidden from the room.")
+          setRoomError(
+            "An old reaction couldn't be cleared. It will be hidden from the room.",
+          )
         })
       }, REACTION_LIFETIME_MS)
     } catch {
-      setSendError("Reaction failed to send. Check your connection and try again.")
+      setSendError(
+        "Reaction failed to send. Check your connection and try again.",
+      )
     }
   }
 
@@ -369,7 +458,23 @@ export default function WatchRoom({
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
     } catch {
-      setSendError("Copy wasn't available here. Select the invite link and copy it.")
+      setSendError(
+        "Copy wasn't available here. Select the invite link and copy it.",
+      )
+    }
+  }
+
+  const copyInvite = async () => {
+    if (!navigator.clipboard?.writeText) {
+      setSendError("Select the invite link above and copy it.")
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setCopied(true)
+      setSendError("")
+    } catch {
+      setSendError("Select the invite link above and copy it.")
     }
   }
 
@@ -379,7 +484,6 @@ export default function WatchRoom({
     setSendError("")
     try {
       if (watchedSecondsRef.current > 0) {
-        if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
         await recordWatchSession(
           userId,
           roomId,
@@ -394,7 +498,9 @@ export default function WatchRoom({
       ])
       onLeave()
     } catch {
-      setSendError("Your session couldn't be saved or you couldn't leave. Check the connection and retry.")
+      setSendError(
+        "Your session couldn't be saved or you couldn't leave. Check the connection and retry.",
+      )
       setLeaving(false)
     }
   }
@@ -425,7 +531,9 @@ export default function WatchRoom({
           <button
             className="button-quiet focus-ring h-10 w-10 rounded-full border"
             onClick={onToggleDark}
-            aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={
+              darkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
             type="button"
           >
             <Icon name={darkMode ? "sun" : "moon"} size={16} />
@@ -462,7 +570,12 @@ export default function WatchRoom({
             className="absolute bottom-4 left-4 rounded-full bg-navy/90 px-3 py-2 text-xs text-ivory"
           >
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-moss" />
-            {onlineCount} watching · {isPlaying ? "Playing together" : "Paused"}
+            {onlineCount} watching ·{" "}
+            {!playerReady
+              ? "Connecting"
+              : isPlaying
+                ? "Playing together"
+                : "Paused"}
           </div>
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
@@ -521,12 +634,18 @@ export default function WatchRoom({
           {(roomError || sendError) && (
             <div className="space-y-1 px-4 pt-3">
               {roomError && (
-                <p className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral" role="alert">
+                <p
+                  className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral"
+                  role="alert"
+                >
                   {roomError}
                 </p>
               )}
               {sendError && (
-                <p className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral" role="alert">
+                <p
+                  className="rounded-lg bg-coral/10 px-3 py-2 text-sm text-coral"
+                  role="alert"
+                >
                   {sendError}
                 </p>
               )}
@@ -632,14 +751,16 @@ export default function WatchRoom({
             />
             <button
               className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold"
-              onClick={() => void navigator.clipboard.writeText(inviteUrl).then(
-                () => setCopied(true),
-                () => setSendError("Select the invite link above and copy it."),
-              )}
+              onClick={() => void copyInvite()}
               type="button"
             >
               {copied ? "Link copied" : "Copy invite link"}
             </button>
+            {sendError && (
+              <p className="mt-3 text-sm text-coral" role="alert">
+                {sendError}
+              </p>
+            )}
           </section>
         </div>
       )}
