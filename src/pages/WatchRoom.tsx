@@ -10,6 +10,7 @@ import {
   remove,
   serverTimestamp,
   set,
+  update,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
 import { realtimeDatabase, youtubeIdFromUrl } from "../lib/firebase"
@@ -85,6 +86,7 @@ export default function WatchRoom({
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
   const [nameDraft, setNameDraft] = useState("")
   const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [hostLeft, setHostLeft] = useState(false)
   const [sending, setSending] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
@@ -116,6 +118,11 @@ export default function WatchRoom({
       setShowNamePrompt(!name)
     }).catch(() => setShowNamePrompt(true))
   }, [userId])
+
+  useEffect(() => {
+    const hostId = roomHostRef.current
+    setHostLeft(Boolean(hostId && hostId !== userId && !presence[hostId]?.online))
+  }, [presence, userId, playback.hostId])
 
   useEffect(() => {
     const names: Record<string, string> = {}
@@ -431,6 +438,30 @@ export default function WatchRoom({
     return () => window.removeEventListener("keydown", closeOnEscape)
   }, [inviteUrl])
 
+  const syncNow = () => {
+    const player = playerRef.current
+    if (!player || !playback.updatedAt) return
+    const target = (playback.currentTime ?? 0) + (playback.playing ? Math.max(0, Date.now() - playback.updatedAt) / 1000 : 0)
+    player.seekTo?.(target, true)
+    playback.playing ? player.playVideo?.() : player.pauseVideo?.()
+  }
+
+  const takeControl = async () => {
+    if (!hostLeft) return
+    try {
+      await update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/hostId`]: userId,
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+        [`roomDirectory/${roomId}/hostId`]: userId,
+        [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
+      })
+      roomHostRef.current = userId
+      setHostLeft(false)
+    } catch {
+      setRoomError("Could not take control yet. Check your connection and try again.")
+    }
+  }
+
   const sendMessage = async () => {
     const value = sanitizeMessage(text.trim())
     if (!isValidMessage(value)) {
@@ -540,6 +571,8 @@ export default function WatchRoom({
   }
 
   const latestReactions = useMemo(() => reactions.slice(-12), [reactions])
+  const initials = (name: string) => name.trim().split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "G"
+  const avatarColor = (uid: string) => ["bg-coral", "bg-moss", "bg-navy", "bg-[#9b6b43]"][uid.charCodeAt(0) % 4]
 
   return (
     <div className={`min-h-[100dvh] ${surface}`}>
@@ -611,6 +644,18 @@ export default function WatchRoom({
                 ? "Playing together"
                 : "Paused"}
           </div>
+          {roomHostRef.current !== userId && (
+            <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
+              <span>Guest mode · playback follows the host</span>
+              <button className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10" onClick={syncNow} type="button">Sync now</button>
+            </div>
+          )}
+          {hostLeft && (
+            <div className="absolute left-4 right-4 top-16 z-20 flex items-center justify-between gap-3 rounded-2xl bg-coral px-4 py-3 text-sm text-ivory shadow-lg">
+              <span>Host left — take control?</span>
+              <button className="rounded-full bg-ivory px-3 py-1 font-bold text-ink" onClick={() => void takeControl()} type="button">Take control</button>
+            </div>
+          )}
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
               <div className="reaction-tray flex items-center gap-1 rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
@@ -692,9 +737,12 @@ export default function WatchRoom({
               </p>
             ) : (
               messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[88%] break-words rounded-2xl px-3 py-2 text-sm ${
+                  <div key={message.id} className={`flex max-w-[92%] items-end gap-2 ${message.uid === userId ? "ml-auto flex-row-reverse" : ""}`}>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-ivory ${avatarColor(message.uid)}`} aria-hidden="true">
+                      {initials(message.uid === userId ? displayName : message.senderName || participantNames[message.uid] || "Guest")}
+                    </span>
+                    <div
+                    className={`break-words rounded-2xl px-3 py-2 text-sm ${
                     message.uid === userId
                       ? "ml-auto bg-coral text-ivory"
                       : "bg-sand/60"
@@ -711,8 +759,9 @@ export default function WatchRoom({
                       minute: "2-digit",
                     })}
                   </span>
-                </div>
-              ))
+                    </div>
+                  </div>
+                ))
             )}
             <div ref={messageEndRef} />
           </div>

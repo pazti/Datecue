@@ -18,22 +18,17 @@ export async function createRoom(
   roomId: string,
   hostId: string,
   movieUrl: string,
+  title = "YouTube video",
 ) {
   const now = Date.now()
+  const metadata = { hostId, movieUrl, title, createdAt: now, updatedAt: now }
   return update(ref(realtimeDatabase), {
     [`rooms/${roomId}`]: {
-      hostId,
-      movieUrl,
-      createdAt: now,
-      updatedAt: now,
+      ...metadata,
       members: { [hostId]: true },
-      public: { hostId, movieUrl, createdAt: now },
+      public: metadata,
     },
-    [`roomDirectory/${roomId}`]: {
-      hostId,
-      movieUrl,
-      createdAt: now,
-    },
+    [`roomDirectory/${roomId}`]: metadata,
   })
 }
 
