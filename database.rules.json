@@ -22,7 +22,7 @@
         },
         "notifications": {
           "$notificationId": {
-            ".write": "auth != null && auth.token.email_verified == true && (auth.uid == $uid || (newData.child('roomId').isString() && root.child('rooms').child(newData.child('roomId').val()).child('members').child(auth.uid).val() == true && root.child('rooms').child(newData.child('roomId').val()).child('members').child($uid).val() == true))",
+            ".write": "auth != null && auth.token.email_verified == true && (auth.uid == $uid || (newData.child('roomId').isString() && (root.child('rooms').child(newData.child('roomId').val()).child('hostId').val() == auth.uid || root.child('rooms').child(newData.child('roomId').val()).child('guestSeat').val() == auth.uid) && (root.child('rooms').child(newData.child('roomId').val()).child('hostId').val() == $uid || root.child('rooms').child(newData.child('roomId').val()).child('guestSeat').val() == $uid)))",
             ".validate": "newData.hasChildren(['title', 'body', 'createdAt']) && newData.child('title').isString() && newData.child('title').val().length > 0 && newData.child('title').val().length <= 120 && newData.child('body').isString() && newData.child('body').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
           }
         }
@@ -34,7 +34,7 @@
         ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && newData.child('hostId').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('hostId').val() == auth.uid))",
         ".validate": "newData.hasChildren(['movieUrl', 'hostId', 'createdAt']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('hostId').isString() && (newData.child('hostId').val() == auth.uid || (data.exists() && newData.child('hostId').val() == data.child('hostId').val())) && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000",
         "hostId": {
-          ".write": "auth != null && auth.token.email_verified == true && (data.val() == auth.uid || (newData.val() == auth.uid && !root.child('rooms').child($roomId).child('presence').child(data.val()).child('online').val() && root.child('rooms').child($roomId).child('members').child(auth.uid).val() == true))",
+          ".write": "auth != null && auth.token.email_verified == true && (data.val() == auth.uid || (newData.val() == auth.uid && root.child('rooms').child($roomId).child('presence').child(data.val()).child('online').val() != true && root.child('rooms').child($roomId).child('guestSeat').val() == auth.uid))",
           ".validate": "newData.isString()"
         },
         "movieUrl": {
@@ -46,7 +46,7 @@
           ".validate": "newData.isString() && newData.val().length <= 120"
         },
         "updatedAt": {
-          ".write": "auth != null && auth.token.email_verified == true && (root.child('rooms').child($roomId).child('hostId').val() == auth.uid || root.child('rooms').child($roomId).child('members').child(auth.uid).val() == true)",
+          ".write": "auth != null && auth.token.email_verified == true && (root.child('rooms').child($roomId).child('hostId').val() == auth.uid || root.child('rooms').child($roomId).child('guestSeat').val() == auth.uid)",
           ".validate": "newData.isNumber() && newData.val() <= now + 60000"
         }
       }
@@ -59,9 +59,15 @@
           ".write": false,
           ".validate": "newData.hasChildren(['movieUrl', 'hostId', 'createdAt']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('hostId').isString() && newData.child('createdAt').isNumber()"
         },
-        ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && newData.hasChildren(['movieUrl', 'createdAt', 'hostId', 'members']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').val() == auth.uid && newData.child('members').child(auth.uid).val() == true && newData.child('members').numChildren() == 1) || (data.exists() && !newData.exists() && data.child('hostId').val() == auth.uid))",
+        ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && newData.hasChildren(['movieUrl', 'createdAt', 'hostId']) && newData.child('movieUrl').isString() && newData.child('movieUrl').val().length > 0 && newData.child('movieUrl').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && newData.child('hostId').val() == auth.uid && newData.child('guestSeat').exists() == false && newData.child('members').exists() == false) || (data.exists() && !newData.exists() && data.child('hostId').val() == auth.uid))",
+        ".validate": "data.exists() || newData.child('members').exists() == false",
+        "guestSeat": {
+          ".read": "auth != null && auth.token.email_verified == true && (data.val() == auth.uid || root.child('rooms').child($roomId).child('hostId').val() == auth.uid)",
+          ".write": "auth != null && auth.token.email_verified == true && ((newData.val() == auth.uid && root.child('rooms').child($roomId).child('hostId').val() != auth.uid && (!data.exists() || data.val() == auth.uid) && root.child('roomDirectory').child($roomId).exists() && root.child('roomDirectory').child($roomId).child('cleanupPending').val() != true && root.child('roomDirectory').child($roomId).child('updatedAt').isNumber() && root.child('roomDirectory').child($roomId).child('updatedAt').val() <= now && now - root.child('roomDirectory').child($roomId).child('updatedAt').val() <= 172800000) || (!newData.exists() && data.val() == auth.uid))",
+          ".validate": "newData.isString()"
+        },
         "hostId": {
-          ".write": "auth != null && auth.token.email_verified == true && (data.val() == auth.uid || (newData.val() == auth.uid && !data.parent().child('presence').child(data.val()).child('online').val() && data.parent().child('members').child(auth.uid).val() == true))",
+          ".write": "auth != null && auth.token.email_verified == true && (data.val() == auth.uid || (newData.val() == auth.uid && data.parent().child('presence').child(data.val()).child('online').val() != true && data.parent().child('guestSeat').val() == auth.uid))",
           ".validate": "newData.isString()"
         },
         "movieUrl": {
@@ -73,47 +79,40 @@
           ".validate": "newData.isString() && newData.val().length <= 120"
         },
         "updatedAt": {
-          ".write": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('members').child(auth.uid).val() == true)",
+          ".write": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           ".validate": "newData.isNumber() && newData.val() <= now + 60000"
         },
-        "members": {
-          "$uid": {
-            ".read": "auth != null && auth.token.email_verified == true && $uid == auth.uid",
-            ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && ((data.exists() && !newData.exists()) || (newData.val() == true && data.parent().parent().exists() && root.child('roomDirectory').child($roomId).exists() && root.child('roomDirectory').child($roomId).child('cleanupPending').val() != true && root.child('roomDirectory').child($roomId).child('hostId').val() == data.parent().parent().child('hostId').val() && root.child('roomDirectory').child($roomId).child('updatedAt').isNumber() && root.child('roomDirectory').child($roomId).child('updatedAt').val() <= now && now - root.child('roomDirectory').child($roomId).child('updatedAt').val() <= 172800000 && (data.exists() || data.parent().numChildren() < 2)))",
-            ".validate": "newData.isBoolean() && newData.val() == true"
-          }
-        },
         "presence": {
-          ".read": "auth != null && auth.token.email_verified == true && data.parent().child('members').child(auth.uid).val() == true",
+          ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           "$uid": {
-            ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && (!newData.exists() || data.parent().parent().child('members').child(auth.uid).val() == true)",
+            ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && (!newData.exists() || data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid)",
             ".validate": "newData.hasChildren(['online', 'updatedAt']) && newData.child('online').isBoolean() && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length <= 40))"
           }
         },
         "playback": {
-          ".read": "auth != null && auth.token.email_verified == true && data.parent().child('members').child(auth.uid).val() == true",
+          ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           ".write": "auth != null && auth.token.email_verified == true && data.parent().child('hostId').val() == auth.uid",
           ".validate": "newData.hasChildren(['playing', 'currentTime', 'updatedAt', 'hostId']) && newData.child('playing').isBoolean() && newData.child('currentTime').isNumber() && newData.child('currentTime').val() >= 0 && newData.child('currentTime').val() <= 86400 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && newData.child('hostId').val() == data.parent().child('hostId').val()"
         },
         "messages": {
-          ".read": "auth != null && auth.token.email_verified == true && data.parent().child('members').child(auth.uid).val() == true",
+          ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           ".indexOn": ["createdAt"],
           "$messageId": {
-            ".write": "auth != null && auth.token.email_verified == true && data.parent().parent().child('members').child(auth.uid).val() == true && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && newData.exists() && data.child('uid').val() == auth.uid))",
+            ".write": "auth != null && auth.token.email_verified == true && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid) && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && newData.exists() && data.child('uid').val() == auth.uid))",
             ".validate": "newData.hasChildren(['uid', 'text', 'createdAt']) && newData.child('uid').val() == auth.uid && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000 && (!newData.child('senderName').exists() || (newData.child('senderName').isString() && newData.child('senderName').val().length <= 40)) && (!newData.child('videoTime').exists() || (newData.child('videoTime').isNumber() && newData.child('videoTime').val() >= 0 && newData.child('videoTime').val() <= 86400)) && (!newData.child('videoId').exists() || (newData.child('videoId').isString() && newData.child('videoId').val().length == 11))"
           }
         },
         "reactions": {
-          ".read": "auth != null && auth.token.email_verified == true && data.parent().child('members').child(auth.uid).val() == true",
+          ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           ".indexOn": ["createdAt"],
           "$reactionId": {
-            ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && data.parent().parent().child('members').child(auth.uid).val() == true && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid))",
+            ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid) && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid))",
             ".validate": "newData.hasChildren(['uid', 'emoji', 'createdAt']) && newData.child('uid').val() == auth.uid && newData.child('emoji').isString() && (newData.child('emoji').val() == '👍' || newData.child('emoji').val() == '❤️' || newData.child('emoji').val() == '😂' || newData.child('emoji').val() == '😮' || newData.child('emoji').val() == '😢' || newData.child('emoji').val() == '🙏' || newData.child('emoji').val() == '👋') && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
           }
         },
         "typing": {
           "$uid": {
-            ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && data.parent().parent().child('members').child(auth.uid).val() == true",
+            ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid)",
             ".validate": "newData.isBoolean()"
           }
         }

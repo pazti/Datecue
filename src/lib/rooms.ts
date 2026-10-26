@@ -2,6 +2,7 @@ import {
   ref,
   set,
   get,
+  onDisconnect,
   update,
   remove,
   runTransaction,
@@ -26,7 +27,6 @@ export async function createRoom(
   return update(ref(realtimeDatabase), {
     [`rooms/${roomId}`]: {
       ...metadata,
-      members: { [hostId]: true },
       public: metadata,
     },
     [`roomDirectory/${roomId}`]: metadata,
@@ -40,9 +40,15 @@ export async function joinRoom(roomId: string, userId: string) {
   if (!directory.exists() || !room?.movieUrl || room.cleanupPending || Date.now() - updatedAt > 48 * 60 * 60 * 1000) {
     throw new Error("ROOM_EXPIRED")
   }
-  await set(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`), true)
-  const membership = await get(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`))
-  if (membership.val() !== true) throw new Error("MEMBERSHIP_NOT_CONFIRMED")
+  if (room.hostId === userId) {
+    return room
+  }
+
+  const guestSeatRef = ref(realtimeDatabase, `rooms/${roomId}/guestSeat`)
+  await onDisconnect(guestSeatRef).remove()
+  await set(guestSeatRef, userId)
+  const claimedSeat = await get(guestSeatRef)
+  if (claimedSeat.val() !== userId) throw new Error("ROOM_FULL")
   return room
 }
 
@@ -68,7 +74,6 @@ export async function getUserProfile(userId: string) {
 
 export async function leaveRoom(roomId: string, userId: string) {
   return Promise.all([
-    remove(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)),
     remove(ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)),
   ])
 }

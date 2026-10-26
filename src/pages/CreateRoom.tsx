@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { get, ref, serverTimestamp, set, update } from "firebase/database"
+import { get, ref, serverTimestamp, update } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
 import { createNotification } from "../lib/notifications"
 import { auth, realtimeDatabase, trackAnalyticsEvent } from "../lib/firebase"
-import { getUserProfile, saveUserProfile } from "../lib/rooms"
+import { getUserProfile, joinRoom, saveUserProfile } from "../lib/rooms"
 import { canonicalYoutubeUrl } from "../lib/youtube"
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -115,7 +115,6 @@ export default function CreateRoom({
             createdAt,
             updatedAt: createdAt,
             hostId: userId,
-            members: { [userId]: true },
             public: {
               movieUrl: canonicalUrl,
               hostId: userId,
@@ -154,16 +153,7 @@ export default function CreateRoom({
             : "That room has expired or is no longer available. Start a new room instead.")
           return
         }
-        await set(
-          ref(realtimeDatabase, `rooms/${id}/members/${currentUser.uid}`),
-          true,
-        )
-        const membership = await get(
-          ref(realtimeDatabase, `rooms/${id}/members/${currentUser.uid}`),
-        )
-        if (membership.val() !== true) {
-          throw new Error("MEMBERSHIP_NOT_CONFIRMED")
-        }
+        await joinRoom(id, currentUser.uid)
         void trackAnalyticsEvent("room_join_success")
         if (room.hostId && room.hostId !== currentUser.uid) {
           void createNotification(room.hostId, {

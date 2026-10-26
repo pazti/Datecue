@@ -126,7 +126,6 @@ export default function WatchRoom({
   const activeVideoTitleRef = useRef("YouTube video")
   const activeVideoUrlRef = useRef(movieUrl)
   const lastPlayingRef = useRef(false)
-  const membershipCleanupTimerRef = useRef(0)
   const isPlayingRef = useRef(false)
   const lastWatchTickRef = useRef(0)
   const lastPublishAtRef = useRef(0)
@@ -339,13 +338,11 @@ export default function WatchRoom({
   publishPlaybackRef.current = publishPlayback
 
   useEffect(() => {
-    window.clearTimeout(membershipCleanupTimerRef.current)
     const presenceRef = ref(
       realtimeDatabase,
       `rooms/${roomId}/presence/${userId}`,
     )
     const typingRef = ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`)
-    const memberRef = ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)
     const messagesQuery = query(
       ref(realtimeDatabase, `rooms/${roomId}/messages`),
       orderByChild("createdAt"),
@@ -367,7 +364,6 @@ export default function WatchRoom({
       displayName: displayNameRef.current || "Guest",
     }).catch(fail)
     void onDisconnect(presenceRef).remove().catch(fail)
-    void onDisconnect(memberRef).remove().catch(fail)
     void onDisconnect(typingRef).remove().catch(fail)
     const activityHeartbeat = window.setInterval(() => {
       void update(ref(realtimeDatabase), {
@@ -487,11 +483,15 @@ export default function WatchRoom({
         sessionIdRef.current,
         roomTitleRef.current,
       ).catch(() => setRoomError(WATCH_SAVE_ERROR))
-      membershipCleanupTimerRef.current = window.setTimeout(() => {
-        void remove(memberRef)
-      }, 0)
     }
   }, [movieUrl, roomId, userId])
+
+  useEffect(() => {
+    if (!hostId || hostId === userId) return
+    const guestSeatRef = ref(realtimeDatabase, `rooms/${roomId}/guestSeat`)
+    void onDisconnect(guestSeatRef).remove().catch(() => {})
+    return () => void onDisconnect(guestSeatRef).cancel()
+  }, [hostId, roomId, userId])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
@@ -598,6 +598,7 @@ export default function WatchRoom({
         [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
         [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
       })
+      await remove(ref(realtimeDatabase, `rooms/${roomId}/guestSeat`))
       roomHostRef.current = userId
       setHostLeft(false)
       const currentTime = playerRef.current?.getCurrentTime?.() ?? playback.currentTime ?? 0
@@ -799,10 +800,14 @@ export default function WatchRoom({
           roomTitleRef.current,
         )
       }
-      await Promise.all([
-        remove(ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`)),
-        remove(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)),
-      ])
+      if (hostId !== userId) {
+        await onDisconnect(ref(realtimeDatabase, `rooms/${roomId}/guestSeat`)).cancel()
+      }
+      const roomChanges: Record<string, null> = {
+        [`presence/${userId}`]: null,
+      }
+      if (hostId !== userId) roomChanges.guestSeat = null
+      await update(ref(realtimeDatabase, `rooms/${roomId}`), roomChanges)
       onLeave()
     } catch {
       setSendError(
