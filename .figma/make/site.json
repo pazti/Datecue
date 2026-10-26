@@ -1,7 +1,8 @@
 {
-  "description": "Datecue — Same movie. Same second. Same reactions. A private watch party experience with synchronized playback, live chat, and shared reactions.",
+  "title": "Datecue | Watch YouTube Together in Sync",
+  "description": "Start a private, two-person YouTube watch party with synced playback, scene-timestamped chat, and live reactions.",
   "robots": {
-    "index": false
+    "index": true
   },
   "accessibility": {
     "addBypassLinks": false,

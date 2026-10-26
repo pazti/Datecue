@@ -6,7 +6,7 @@ Datecue is a private watch-party app built with React, Vite, and Firebase.
 
 It gives two people a shared cinema for synchronized video, timestamped chat, and lightweight reactions.
 
-Authenticated users can create and join rooms backed by Firebase Realtime Database. Rooms support synchronized YouTube playback, live presence, chat, reactions, and saved watch history.
+Authenticated users can create and join rooms backed by Firebase Realtime Database. Rooms support synchronized YouTube playback, live presence, chat, reactions, and saved watch history. Privacy Policy and Terms of Service are available from the landing, account, and home screens.
 
 ## Run locally
 
@@ -36,13 +36,17 @@ pnpm preview
 
 Firebase web configuration is read from `VITE_FIREBASE_*` environment variables. The repository includes fallback values for the Firebase project used by the original import; set all configuration values for your own Firebase project before deploying a fork.
 
-Enable Email/Password authentication and Realtime Database in that Firebase project. Room access rules are in [`database.rules.json`](./database.rules.json), referenced by [`firebase.json`](./firebase.json). Deploy those rules before testing room playback, presence, chat, and reactions:
+Enable Email/Password and Google authentication, Realtime Database, and Firebase Analytics in that Firebase project. Room access rules are in [`database.rules.json`](./database.rules.json), referenced by [`firebase.json`](./firebase.json). They require verified accounts, permit at most two room members, reject joins to stale or cleanup-pending rooms, and restrict host-only room operations.
+
+The scheduled cleanup function in [`functions/index.js`](./functions/index.js) removes rooms after 48 hours without activity. It runs once daily, so deletion can occur up to roughly 24 hours after the inactivity window. Deploy both rules and functions before testing production behavior:
 
 ```bash
-firebase deploy --only database
+firebase deploy --only hosting,database,functions
 ```
 
-The Firebase CLI must be authenticated and pointed at the intended project. The Firebase web API key is client configuration, not a server secret; restrict it in Firebase/Google Cloud settings as appropriate.
+The Firebase CLI must be authenticated and pointed at the intended project. Scheduled functions require the appropriate Firebase billing plan and Cloud Scheduler/Functions APIs. The Firebase web API key is client configuration, not a server secret; restrict it in Firebase/Google Cloud settings as appropriate.
+
+The privacy and terms pages are an implementation draft. Add the service operator's legal name, privacy contact, and applicable jurisdiction before public launch; Datecue currently has no in-app account deletion or data-export control.
 
 ## Project structure
 
@@ -50,10 +54,13 @@ The Firebase CLI must be authenticated and pointed at the intended project. The 
 src/
   components/Logo.tsx       # Datecue mark and shared line icons
   pages/LandingPage.tsx     # Marketing / entry experience
+  pages/LegalPage.tsx       # Privacy Policy and Terms of Service
   pages/CreateRoom.tsx      # Create and join flow
   pages/WatchRoom.tsx       # Watch party experience
   App.tsx                   # Screen-level navigation and theme state
   index.css                 # Shared design tokens and global styles
+functions/
+  index.js                  # Scheduled cleanup of inactive room data
 ```
 
 ## Design direction

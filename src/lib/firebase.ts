@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from "firebase/app"
 import { getAuth } from "firebase/auth"
 import { getDatabase } from "firebase/database"
+import { getAnalytics, isSupported, logEvent, type Analytics } from "firebase/analytics"
 import { youtubeVideoIdFromUrl } from "./youtube"
 
 export const firebaseConfig = {
@@ -29,6 +30,19 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const realtimeDatabase = getDatabase(app)
 export default app
+
+let analyticsInstance: Promise<Analytics | null> | null = null
+
+export async function trackAnalyticsEvent(
+  eventName: string,
+  params: Record<string, string | number | boolean> = {},
+) {
+  analyticsInstance ??= isSupported()
+    .then((supported) => supported ? getAnalytics(app) : null)
+    .catch(() => null)
+  const analytics = await analyticsInstance
+  if (analytics) logEvent(analytics, eventName, params)
+}
 
 export function youtubeIdFromUrl(value: string) {
   return youtubeVideoIdFromUrl(value)

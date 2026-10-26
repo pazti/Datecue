@@ -13,8 +13,10 @@ import {
   update,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
-import { realtimeDatabase, youtubeIdFromUrl } from "../lib/firebase"
+import { realtimeDatabase, trackAnalyticsEvent, youtubeIdFromUrl } from "../lib/firebase"
+import { createNotification } from "../lib/notifications"
 import { recordWatchSession } from "../lib/rooms"
+import { canonicalYoutubeUrl } from "../lib/youtube"
 import {
   isValidMessage,
   isValidReaction,
@@ -37,6 +39,8 @@ interface Message {
   senderName?: string
   text: string
   createdAt: number
+  videoTime?: number
+  videoId?: string
 }
 
 interface Reaction {
@@ -59,6 +63,16 @@ const MAX_VISIBLE_REACTIONS = 30
 const REACTION_LIFETIME_MS = 15_000
 const WATCH_SAVE_ERROR = "Watch time hasn't synced yet; we'll retry."
 
+function formatVideoTime(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const remaining = safe % 60
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`
+    : `${minutes}:${String(remaining).padStart(2, "0")}`
+}
+
 export default function WatchRoom({
   onLeave,
   darkMode,
@@ -71,31 +85,50 @@ export default function WatchRoom({
   const [reactions, setReactions] = useState<Reaction[]>([])
   const [presence, setPresence] = useState<Record<string, {
     online?: boolean
+    displayName?: string
   }>>({})
+  const presenceRef = useRef(presence)
+  presenceRef.current = presence
   const [playback, setPlayback] = useState<Playback>({})
   const [hostId, setHostId] = useState<string | null>(null)
+  const [roomMovieUrl, setRoomMovieUrl] = useState(movieUrl)
   const [roomTitle, setRoomTitle] = useState("YouTube video")
   const [isPlaying, setIsPlaying] = useState(false)
+  const [videoTime, setVideoTime] = useState(0)
+  const [videoDuration, setVideoDuration] = useState(0)
   const [playerReady, setPlayerReady] = useState(false)
   const [text, setText] = useState("")
+  const [videoDraft, setVideoDraft] = useState("")
+  const [changingVideo, setChangingVideo] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
-  const [videoError, setVideoError] = useState(false)
+  const [videoError, setVideoError] = useState("")
   const [copied, setCopied] = useState(false)
   const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
   const [roomError, setRoomError] = useState("")
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
   const [displayName, setDisplayName] = useState("")
+  const [nameError, setNameError] = useState("")
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
   const [nameDraft, setNameDraft] = useState("")
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [hostLeft, setHostLeft] = useState(false)
+  const [roomEnded, setRoomEnded] = useState(false)
   const [sending, setSending] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
+  const playerContainerRef = useRef<HTMLDivElement>(null)
+  const publishPlaybackRef = useRef<(playing: boolean, currentTime: number) => Promise<void>>(async () => {})
   const roomHostRef = useRef<string | null>(null)
+  const displayNameRef = useRef(displayName)
+  displayNameRef.current = displayName
+  const roomTitleRef = useRef("YouTube video")
+  const activeVideoTitleRef = useRef("YouTube video")
+  const activeVideoUrlRef = useRef(movieUrl)
+  const lastPlayingRef = useRef(false)
   const membershipCleanupTimerRef = useRef(0)
   const isPlayingRef = useRef(false)
+  const lastWatchTickRef = useRef(0)
   const lastPublishAtRef = useRef(0)
   const hostSampleRef = useRef<{
     time: number
@@ -107,11 +140,123 @@ export default function WatchRoom({
   const sessionIdRef = useRef("")
   if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
   const messageEndRef = useRef<HTMLDivElement>(null)
-  const videoId = youtubeIdFromUrl(movieUrl)
+  const videoId = youtubeIdFromUrl(roomMovieUrl)
   const onlineCount = Object.values(presence).filter(
     (item) => item.online,
   ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
+
+  useEffect(() => {
+    if (!videoId) return
+    let cancelled = false
+    let player: any = null
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src="https://www.youtube.com/iframe_api"]',
+    )
+    const loadApi = new Promise<void>((resolve) => {
+      if (window.YT?.Player) {
+        resolve()
+        return
+      }
+      const previousCallback = window.onYouTubeIframeAPIReady
+      window.onYouTubeIframeAPIReady = () => {
+        previousCallback?.()
+        resolve()
+      }
+      if (!existingScript) {
+        const script = document.createElement("script")
+        script.src = "https://www.youtube.com/iframe_api"
+        script.async = true
+        script.onerror = () => setVideoError("The YouTube player couldn't load. Check your connection and try again.")
+        document.head.appendChild(script)
+      }
+    })
+
+    void loadApi.then(() => {
+      if (cancelled || !playerContainerRef.current || !window.YT?.Player)
+        return
+      const target = document.createElement("div")
+      target.className = "h-full w-full"
+      playerContainerRef.current.replaceChildren(target)
+      player = new window.YT.Player(target, {
+        width: "100%",
+        height: "100%",
+        videoId,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          playsinline: 1,
+          origin: window.location.origin,
+        },
+        events: {
+          onReady: (event: any) => {
+            if (cancelled) return
+            playerRef.current = event.target
+            setVideoDuration(event.target.getDuration?.() ?? 0)
+            setPlayerReady(true)
+          },
+          onStateChange: (event: any) => {
+            const playing = event.data === 1
+            isPlayingRef.current = playing
+            setIsPlaying(playing)
+            setVideoTime(event.target.getCurrentTime?.() ?? 0)
+            if (roomHostRef.current === userId) {
+              const currentTime = event.target.getCurrentTime?.() ?? 0
+              void publishPlaybackRef.current(playing, currentTime)
+              if (playing && !lastPlayingRef.current) {
+                void trackAnalyticsEvent("host_started_playing")
+                for (const uid of Object.keys(presenceRef.current)) {
+                  if (uid !== userId) {
+                    void createNotification(uid, {
+                      title: "The host started the video",
+                      body: `${roomTitleRef.current} is playing now.`,
+                      type: "system",
+                      roomId,
+                    }).catch(() => {})
+                  }
+                }
+              }
+              lastPlayingRef.current = playing
+            }
+          },
+          onError: (event: any) => {
+            const messages: Record<number, string> = {
+              2: "That YouTube link is invalid.",
+              5: "This video couldn't be played in the browser.",
+              100: "This video is unavailable or has been removed.",
+              101: "The video owner doesn't allow playback in other websites.",
+              150: "The video owner doesn't allow playback in other websites.",
+            }
+            setVideoError(messages[event.data] || "This YouTube video can't be played here.")
+          },
+        },
+      })
+    })
+
+    return () => {
+      cancelled = true
+      setPlayerReady(false)
+      playerRef.current = null
+      player?.destroy?.()
+      playerContainerRef.current?.replaceChildren()
+    }
+  }, [roomId, userId, videoId])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!playerReady || hostId === userId || !player || !playback.updatedAt)
+      return
+    const target =
+      (playback.currentTime ?? 0) +
+      (playback.playing
+        ? Math.max(0, Date.now() - playback.updatedAt) / 1000
+        : 0)
+    const currentTime = player.getCurrentTime?.() ?? 0
+    if (Math.abs(currentTime - target) > 1.5) player.seekTo?.(target, true)
+    if (playback.playing) player.playVideo?.()
+    else player.pauseVideo?.()
+  }, [hostId, playback, playerReady, userId])
 
   useEffect(() => {
     void getUserProfile(userId).then((profile) => {
@@ -123,27 +268,48 @@ export default function WatchRoom({
   }, [userId])
 
   useEffect(() => {
+    void trackAnalyticsEvent("watch_session_start")
+  }, [roomId])
+
+  useEffect(() => () => {
+    void trackAnalyticsEvent("watch_session_end", {
+      duration_seconds: Math.floor(watchedSecondsRef.current),
+    })
+  }, [roomId])
+
+  useEffect(() => {
     const hostId = roomHostRef.current
     setHostLeft(Boolean(hostId && hostId !== userId && !presence[hostId]?.online))
-  }, [presence, userId, playback.hostId])
+  }, [hostId, presence, userId, playback.hostId])
 
   useEffect(() => {
     const names: Record<string, string> = {}
-    for (const uid of Object.keys(presence)) {
-      void getUserProfile(uid).then((profile) => {
-        if (profile?.displayName) setParticipantNames((current) => ({ ...current, [uid]: profile.displayName! }))
-      })
+    for (const [uid, value] of Object.entries(presence)) {
+      if (value.displayName) names[uid] = value.displayName
     }
-    setParticipantNames((current) => ({ ...current, ...names }))
+    setParticipantNames(names)
   }, [presence])
 
   const saveName = async () => {
     const name = nameDraft.trim().slice(0, 40)
     if (name.length < 2) return
-    await saveUserProfile(userId, name)
-    setDisplayName(name)
-    setShowNamePrompt(false)
+    setNameError("")
+    try {
+      await saveUserProfile(userId, name)
+      setDisplayName(name)
+      setShowNamePrompt(false)
+    } catch {
+      setNameError("Your name couldn't be saved. Check your connection and retry.")
+    }
   }
+
+  useEffect(() => {
+    if (!displayName) return
+    void update(
+      ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`),
+      { displayName },
+    ).catch(() => {})
+  }, [displayName, roomId, userId])
 
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
@@ -151,11 +317,15 @@ export default function WatchRoom({
         return
       const updatedAt = Date.now()
       try {
-        await set(ref(realtimeDatabase, `rooms/${roomId}/playback`), {
-          playing,
-          currentTime: Math.max(0, currentTime),
-          updatedAt: serverTimestamp(),
-          hostId: userId,
+        await update(ref(realtimeDatabase), {
+          [`rooms/${roomId}/playback`]: {
+            playing,
+            currentTime: Math.max(0, currentTime),
+            updatedAt: serverTimestamp(),
+            hostId: userId,
+          },
+          [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+          [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
         })
         lastPublishAtRef.current = updatedAt
       } catch {
@@ -166,6 +336,7 @@ export default function WatchRoom({
     },
     [roomId, userId],
   )
+  publishPlaybackRef.current = publishPlayback
 
   useEffect(() => {
     window.clearTimeout(membershipCleanupTimerRef.current)
@@ -173,6 +344,7 @@ export default function WatchRoom({
       realtimeDatabase,
       `rooms/${roomId}/presence/${userId}`,
     )
+    const typingRef = ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`)
     const memberRef = ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)
     const messagesQuery = query(
       ref(realtimeDatabase, `rooms/${roomId}/messages`),
@@ -189,20 +361,63 @@ export default function WatchRoom({
         "Room updates are unavailable. Check the Firebase rules and try again.",
       )
 
-    void set(presenceRef, { online: true, updatedAt: serverTimestamp() }).catch(
-      fail,
-    )
+    void set(presenceRef, {
+      online: true,
+      updatedAt: serverTimestamp(),
+      displayName: displayNameRef.current || "Guest",
+    }).catch(fail)
     void onDisconnect(presenceRef).remove().catch(fail)
     void onDisconnect(memberRef).remove().catch(fail)
+    void onDisconnect(typingRef).remove().catch(fail)
+    const activityHeartbeat = window.setInterval(() => {
+      void update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+        [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
+        [`rooms/${roomId}/presence/${userId}/updatedAt`]: serverTimestamp(),
+      }).catch(fail)
+    }, 30_000)
 
     const stops = [
       onValue(
         ref(realtimeDatabase, `roomDirectory/${roomId}`),
         (snap) => {
+          if (!snap.exists()) {
+            setRoomEnded(true)
+            setRoomError("This room has ended or expired. You can leave and return home.")
+            return
+          }
+          setRoomEnded(false)
           const value = snap.val() ?? {}
           roomHostRef.current = value.hostId ?? null
           setHostId(value.hostId ?? null)
-          setRoomTitle(value.title || "YouTube video")
+          const title = value.title || "YouTube video"
+          roomTitleRef.current = title
+          setRoomTitle(title)
+          if (value.movieUrl) {
+            if (value.movieUrl !== activeVideoUrlRef.current) {
+              void recordWatchSession(
+                userId,
+                roomId,
+                activeVideoUrlRef.current,
+                watchedSecondsRef.current,
+                sessionIdRef.current,
+                activeVideoTitleRef.current,
+              ).catch(() => setRoomError(WATCH_SAVE_ERROR))
+              activeVideoUrlRef.current = value.movieUrl
+              watchedSecondsRef.current = 0
+              savedWatchSecondsRef.current = 0
+              sessionIdRef.current = crypto.randomUUID()
+              hostSampleRef.current = null
+              lastPublishAtRef.current = 0
+              lastPlayingRef.current = false
+              isPlayingRef.current = false
+              setIsPlaying(false)
+              setVideoTime(0)
+              setVideoError("")
+            }
+            activeVideoTitleRef.current = title
+            setRoomMovieUrl(value.movieUrl)
+          }
         },
         fail,
       ),
@@ -260,21 +475,23 @@ export default function WatchRoom({
       ),
     ]
     return () => {
+      window.clearInterval(activityHeartbeat)
       stops.forEach((stop) => stop())
       void remove(presenceRef)
+      void remove(typingRef)
       void recordWatchSession(
         userId,
         roomId,
-        movieUrl,
+        activeVideoUrlRef.current,
         watchedSecondsRef.current,
         sessionIdRef.current,
-        roomTitle,
+        roomTitleRef.current,
       ).catch(() => setRoomError(WATCH_SAVE_ERROR))
       membershipCleanupTimerRef.current = window.setTimeout(() => {
         void remove(memberRef)
       }, 0)
     }
-  }, [movieUrl, roomId, roomTitle, userId])
+  }, [movieUrl, roomId, userId])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
@@ -285,9 +502,10 @@ export default function WatchRoom({
         await recordWatchSession(
           userId,
           roomId,
-          movieUrl,
+          activeVideoUrlRef.current,
           seconds,
           sessionIdRef.current,
+          roomTitleRef.current,
         )
         savedWatchSecondsRef.current = Math.max(
           savedWatchSecondsRef.current,
@@ -304,11 +522,32 @@ export default function WatchRoom({
   useEffect(() => {
     const timer = window.setInterval(() => {
       const player = playerRef.current
-      if (!playerReady || roomHostRef.current !== userId || !player) return
+      if (!playerReady || !player) return
       const now = Date.now()
       const currentTime = player.getCurrentTime?.()
       if (typeof currentTime !== "number") return
       const playing = player.getPlayerState?.() === 1
+      setVideoTime(currentTime)
+      setVideoDuration(player.getDuration?.() || 0)
+      if (playing && lastWatchTickRef.current) {
+        watchedSecondsRef.current += Math.min(1.5, (now - lastWatchTickRef.current) / 1000)
+      }
+      lastWatchTickRef.current = playing ? now : 0
+      isPlayingRef.current = playing
+      setIsPlaying(playing)
+      if (roomHostRef.current !== userId) {
+        if (playback.updatedAt) {
+          const target =
+            (playback.currentTime ?? 0) +
+            (playback.playing
+              ? Math.max(0, now - playback.updatedAt) / 1000
+              : 0)
+          if (Math.abs(target - currentTime) > 1.5) player.seekTo?.(target, true)
+          if (playback.playing && !playing) player.playVideo?.()
+          else if (!playback.playing && playing) player.pauseVideo?.()
+        }
+        return
+      }
       const previous = hostSampleRef.current
 
       if (previous) {
@@ -321,11 +560,9 @@ export default function WatchRoom({
       }
 
       hostSampleRef.current = { time: currentTime, at: now, playing }
-      isPlayingRef.current = playing
-      setIsPlaying(playing)
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [playerReady, publishPlayback, userId])
+  }, [playback, playerReady, publishPlayback, userId])
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: "end" })
@@ -353,14 +590,61 @@ export default function WatchRoom({
     try {
       await update(ref(realtimeDatabase), {
         [`rooms/${roomId}/hostId`]: userId,
-        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+      })
+      await update(ref(realtimeDatabase), {
         [`roomDirectory/${roomId}/hostId`]: userId,
+      })
+      await update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
         [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
       })
       roomHostRef.current = userId
       setHostLeft(false)
+      const currentTime = playerRef.current?.getCurrentTime?.() ?? playback.currentTime ?? 0
+      void publishPlayback(Boolean(playback.playing), currentTime)
     } catch {
       setRoomError("Could not take control yet. Check your connection and try again.")
+    }
+  }
+
+  const changeVideo = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (hostId !== userId || changingVideo) return
+    const nextUrl = canonicalYoutubeUrl(videoDraft)
+    if (!nextUrl) {
+      setSendError("Paste a valid YouTube video, Shorts, or embed link.")
+      return
+    }
+    setChangingVideo(true)
+    setSendError("")
+    try {
+      let title = "YouTube video"
+      try {
+        const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(nextUrl)}&format=json`)
+        if (response.ok) title = String((await response.json()).title || title).slice(0, 120)
+      } catch {
+        // Keep video changes available when YouTube metadata is unavailable.
+      }
+      await update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/movieUrl`]: nextUrl,
+        [`rooms/${roomId}/title`]: title,
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+        [`rooms/${roomId}/playback`]: {
+          playing: false,
+          currentTime: 0,
+          updatedAt: serverTimestamp(),
+          hostId: userId,
+        },
+        [`roomDirectory/${roomId}/movieUrl`]: nextUrl,
+        [`roomDirectory/${roomId}/title`]: title,
+        [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
+      })
+      void trackAnalyticsEvent("room_video_changed")
+      setVideoDraft("")
+    } catch {
+      setSendError("The video couldn't be changed. Check the room rules and try again.")
+    } finally {
+      setChangingVideo(false)
     }
   }
 
@@ -377,6 +661,8 @@ export default function WatchRoom({
         uid: userId,
         senderName: displayName || "Guest",
         text: value,
+        videoTime: playerRef.current?.getCurrentTime?.() ?? videoTime,
+        videoId: youtubeIdFromUrl(activeVideoUrlRef.current) || undefined,
         createdAt: serverTimestamp(),
       })
       setText("")
@@ -445,10 +731,40 @@ export default function WatchRoom({
     }
   }
 
+  const shareInvite = async () => {
+    if (!navigator.share) {
+      await copyInvite()
+      return
+    }
+    try {
+      await navigator.share({
+        title: "Join my Datecue room",
+        text: `Join me to watch ${roomTitle}`,
+        url: inviteUrl,
+      })
+    } catch (error) {
+      if (error instanceof Error && error.name !== "AbortError") {
+        setSendError("Sharing wasn't available. Copy the invite link instead.")
+      }
+    }
+  }
+
   const endRoom = async () => {
     if (hostId !== userId || leaving) return
+    if (!window.confirm("End this room for everyone? Your watch time will be saved.")) return
     setLeaving(true)
     try {
+      await recordWatchSession(
+        userId,
+        roomId,
+        activeVideoUrlRef.current,
+        watchedSecondsRef.current,
+        sessionIdRef.current,
+        roomTitleRef.current,
+      )
+      void trackAnalyticsEvent("room_ended", {
+        duration_seconds: Math.floor(watchedSecondsRef.current),
+      })
       await Promise.all([
         remove(ref(realtimeDatabase, `rooms/${roomId}`)),
         remove(ref(realtimeDatabase, `roomDirectory/${roomId}`)),
@@ -462,6 +778,14 @@ export default function WatchRoom({
 
   const leaveRoom = async () => {
     if (leaving) return
+    if (roomEnded) {
+      onLeave()
+      return
+    }
+    if (
+      watchedSecondsRef.current >= 5 * 60 &&
+      !window.confirm("Leave and save your watch time for this room?")
+    ) return
     setLeaving(true)
     setSendError("")
     try {
@@ -469,9 +793,10 @@ export default function WatchRoom({
         await recordWatchSession(
           userId,
           roomId,
-          movieUrl,
+          activeVideoUrlRef.current,
           watchedSecondsRef.current,
           sessionIdRef.current,
+          roomTitleRef.current,
         )
       }
       await Promise.all([
@@ -536,21 +861,23 @@ export default function WatchRoom({
       </header>
 
       <main className="flex min-h-[calc(100dvh-64px)] flex-col lg:flex-row">
-        <section className="relative min-h-[42dvh] flex-1 bg-[#10181d] sm:min-h-[58dvh]">
+        <section className="relative aspect-video w-full shrink-0 bg-[#10181d] lg:aspect-auto lg:min-h-[calc(100dvh-4rem)] lg:flex-1">
           <div className="absolute inset-0">
             {videoId && !videoError ? (
-              <div id={`youtube-player-${roomId}`} className="h-full w-full" />
+              <div
+                id={`youtube-player-${roomId}`}
+                ref={playerContainerRef}
+                className="h-full w-full"
+              />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-ivory">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-ivory/30 text-3xl">
                   !
                 </div>
-                <p className="font-semibold">
-                  This YouTube video can&apos;t be played here.
-                </p>
+                <p className="font-semibold">{videoError || "This YouTube video can't be played here."}</p>
                 <a
                   className="focus-ring text-coral-light underline"
-                  href={movieUrl}
+                  href={roomMovieUrl}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -561,7 +888,7 @@ export default function WatchRoom({
           </div>
           <div
             aria-live="polite"
-            className="absolute bottom-4 left-4 rounded-full bg-navy/90 px-3 py-2 text-xs text-ivory"
+            className="absolute left-4 top-4 rounded-full bg-navy/90 px-3 py-2 text-xs text-ivory"
           >
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-moss" />
             {onlineCount} watching ·{" "}
@@ -571,10 +898,43 @@ export default function WatchRoom({
                 ? "Playing together"
                 : "Paused"}
           </div>
-          {hostId !== userId && (
-            <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
+          {hostId !== userId && !hostLeft && (
+            <div className="absolute left-4 right-4 top-14 z-20 flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
               <span>Guest mode · playback follows the host</span>
               <button className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10" onClick={syncNow} type="button">Sync now</button>
+            </div>
+          )}
+          {hostId !== userId && videoId && !videoError && (
+            <div className="absolute inset-0 z-10" aria-label="Guest playback is controlled by the host" />
+          )}
+          {hostId === userId && playerReady && (
+            <div className="absolute bottom-4 left-4 right-20 z-20 flex items-center gap-2 rounded-xl bg-black/75 px-3 py-2 text-xs text-white">
+              <button
+                aria-label={isPlaying ? "Pause video" : "Play video"}
+                className="focus-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/30"
+                onClick={() => {
+                  if (isPlaying) playerRef.current?.pauseVideo?.()
+                  else playerRef.current?.playVideo?.()
+                }}
+                type="button"
+              >
+                <Icon name={isPlaying ? "pause" : "play"} size={14} />
+              </button>
+              <span className="mono shrink-0">{formatVideoTime(videoTime)}</span>
+              <input
+                aria-label="Seek video"
+                className="min-w-0 flex-1 accent-[#d86856]"
+                max={Math.max(1, videoDuration)}
+                min={0}
+                onChange={(event) => {
+                  const nextTime = Number(event.target.value)
+                  setVideoTime(nextTime)
+                  playerRef.current?.seekTo?.(nextTime, true)
+                }}
+                type="range"
+                value={Math.min(videoTime, videoDuration || videoTime)}
+              />
+              <span className="mono shrink-0">{formatVideoTime(videoDuration)}</span>
             </div>
           )}
           {hostLeft && (
@@ -585,7 +945,7 @@ export default function WatchRoom({
           )}
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
-              <div className="reaction-tray flex items-center gap-1 rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
+              <div className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
                 {REACTIONS.map((emoji) => (
                   <button
                     key={emoji}
@@ -626,16 +986,50 @@ export default function WatchRoom({
               {reaction.emoji}
             </span>
           ))}
+          {roomEnded && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center text-ivory">
+              <h2 className="text-2xl">This room has ended</h2>
+              <p className="text-sm text-ivory/70">Your saved watch history is still available from home.</p>
+              <button className="button-primary focus-ring rounded-lg px-4 py-2 font-bold" onClick={onLeave} type="button">Return home</button>
+            </div>
+          )}
         </section>
 
         <aside className="flex w-full flex-col border-t hairline lg:w-[380px] lg:border-l lg:border-t-0">
           <div className="border-b hairline px-5 py-4">
             <h1 className="display-serif text-2xl">The conversation</h1>
+            <p className="mt-1 truncate text-sm font-semibold" title={roomTitle}>{roomTitle}</p>
             <p className="text-sm text-muted-ink" aria-live="polite">
               {onlineCount < 2
                 ? "Waiting for another person to join"
                 : `${onlineCount} people are watching`}
             </p>
+            <div className="mt-3 flex items-center gap-2">
+              {Object.entries(presence).slice(0, 2).map(([uid, person]) => (
+                <span key={uid} className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold text-ivory ${avatarColor(uid)}`} title={person.displayName || "Guest"}>
+                  {initials(person.displayName || "Guest")}
+                </span>
+              ))}
+              <span className="text-xs text-muted-ink">
+                {Object.values(presence).map((person) => person.displayName || "Guest").join(" · ")}
+              </span>
+            </div>
+            {hostId === userId && (
+              <form className="mt-4 flex gap-2" onSubmit={(event) => void changeVideo(event)}>
+                <input
+                  aria-label="Change the room video"
+                  className="input-field focus-ring min-w-0 rounded-lg px-3 py-2 text-xs"
+                  maxLength={500}
+                  onChange={(event) => setVideoDraft(event.target.value)}
+                  placeholder="Paste a YouTube link to change video"
+                  type="url"
+                  value={videoDraft}
+                />
+                <button className="button-quiet focus-ring shrink-0 rounded-lg border px-3 py-2 text-xs font-bold" disabled={changingVideo || !videoDraft.trim()} type="submit">
+                  {changingVideo ? "Changing…" : "Change"}
+                </button>
+              </form>
+            )}
           </div>
           {(roomError || sendError) && (
             <div className="space-y-1 px-4 pt-3">
@@ -657,7 +1051,7 @@ export default function WatchRoom({
               )}
             </div>
           )}
-          <div className="min-h-[35dvh] max-h-[55dvh] flex-1 space-y-3 overflow-y-auto p-4 sm:p-5 lg:min-h-0 lg:max-h-none">
+          <div className="min-h-[35dvh] max-h-[55dvh] flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:min-h-0 lg:max-h-none">
             {messages.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-ink">
                 Your conversation will appear here. Say hello when you’re ready.
@@ -679,12 +1073,30 @@ export default function WatchRoom({
                     {message.uid === userId ? "You" : message.senderName || participantNames[message.uid] || "Guest"}
                   </span>
                   {message.text}
-                  <span className="mt-1 block text-[10px] opacity-70">
-
+                  <span className="mt-1 flex items-center gap-2 text-[10px] opacity-70">
                     {new Date(message.createdAt).toLocaleTimeString([], {
                       hour: "numeric",
                       minute: "2-digit",
                     })}
+                    {typeof message.videoTime === "number" && (
+                      message.videoId === videoId ? (
+                        <button
+                          className="underline underline-offset-2"
+                          onClick={() => {
+                            if (hostId === userId) playerRef.current?.seekTo?.(message.videoTime, true)
+                            else syncNow()
+                          }}
+                          title={hostId === userId ? "Jump to this moment" : "Sync with the host"}
+                          type="button"
+                        >
+                          {formatVideoTime(message.videoTime)}
+                        </button>
+                      ) : (
+                        <span title="Timestamp from a different room video">
+                          {formatVideoTime(message.videoTime)}
+                        </span>
+                      )
+                    )}
                   </span>
                     </div>
                   </div>
@@ -692,7 +1104,8 @@ export default function WatchRoom({
             )}
             {Object.entries(typingUsers).some(([uid, typing]) => uid !== userId && typing) && (
               <p className="px-2 text-xs italic text-muted-ink" role="status">
-                Someone is typing…
+                {Object.entries(typingUsers).find(([uid, typing]) => uid !== userId && typing)?.[0] &&
+                  `${presence[Object.entries(typingUsers).find(([uid, typing]) => uid !== userId && typing)![0]]?.displayName || "Someone"} is typing…`}
               </p>
             )}
             <div ref={messageEndRef} />
@@ -742,6 +1155,7 @@ export default function WatchRoom({
             <h2 className="mt-3 text-3xl" id="name-title">What should they call you?</h2>
             <p className="mt-2 text-sm text-muted-ink">Your name appears beside messages and in the room.</p>
             <input className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3" autoFocus maxLength={40} minLength={2} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Display name" />
+            {nameError && <p className="mt-2 text-sm text-coral" role="alert">{nameError}</p>}
             <button className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold" disabled={nameDraft.trim().length < 2} onClick={() => void saveName()} type="button">Save name</button>
           </section>
         </div>
@@ -791,6 +1205,13 @@ export default function WatchRoom({
               type="button"
             >
               {copied ? "Link copied" : "Copy invite link"}
+            </button>
+            <button
+              className="button-quiet focus-ring mt-2 w-full rounded-xl border px-4 py-3 font-bold"
+              onClick={() => void shareInvite()}
+              type="button"
+            >
+              Share invite…
             </button>
             {sendError && (
               <p className="mt-3 text-sm text-coral" role="alert">

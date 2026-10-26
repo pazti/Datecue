@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
 import Logo, { Icon } from "../components/Logo"
 import LiquidHero, { LiquidGlass } from "../components/LiquidHero"
+import type { LegalDocument } from "./LegalPage"
 
 interface Props {
   onGetStarted: (url: string) => void
   onLogin: () => void
+  onLegal: (document: LegalDocument) => void
   darkMode: boolean
   onToggleDark: () => void
 }
@@ -128,6 +130,7 @@ function PhonePreview({ darkMode }: { darkMode: boolean }) {
 export default function LandingPage({
   onGetStarted,
   onLogin,
+  onLegal,
   darkMode,
   onToggleDark,
 }: Props) {
@@ -375,6 +378,10 @@ export default function LandingPage({
           <span className="mono text-[10px] uppercase tracking-[.15em]">
             Datecue / made for two
           </span>
+          <nav aria-label="Legal" className="flex gap-4 text-xs">
+            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("privacy")} type="button">Privacy</button>
+            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("terms")} type="button">Terms</button>
+          </nav>
         </div>
       </footer>
     </div>

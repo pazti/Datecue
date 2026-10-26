@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { get, ref, serverTimestamp, set, update } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
-import { auth, realtimeDatabase } from "../lib/firebase"
+import { createNotification } from "../lib/notifications"
+import { auth, realtimeDatabase, trackAnalyticsEvent } from "../lib/firebase"
+import { getUserProfile, saveUserProfile } from "../lib/rooms"
 import { canonicalYoutubeUrl } from "../lib/youtube"
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -33,12 +35,35 @@ export default function CreateRoom({
   const [code, setCode] = useState(initialRoomCode.toUpperCase())
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [profileLoaded, setProfileLoaded] = useState(false)
+  const [hasProfileName, setHasProfileName] = useState(false)
+  const [profileName, setProfileName] = useState("")
   let roomLookupTimeout = 0
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
+  useEffect(() => {
+    void getUserProfile(userId)
+      .then((profile) => {
+        setProfileName(profile?.displayName || "")
+        setHasProfileName(Boolean(profile?.displayName?.trim()))
+      })
+      .catch(() => {
+        setProfileName("")
+        setHasProfileName(false)
+      })
+      .finally(() => setProfileLoaded(true))
+  }, [userId])
   const submit = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
     setError("")
+    if (!profileLoaded) {
+      setError("Your profile is still loading. Try again in a moment.")
+      return
+    }
+    if (profileName.trim().length < 2) {
+      setError("Add a display name before creating or joining a room.")
+      return
+    }
     const id =
       tab === "create"
         ? Array.from(
@@ -63,8 +88,17 @@ export default function CreateRoom({
       setError("Your sign-in session is still loading. Refresh and try again.")
       return
     }
+    if (
+      currentUser.providerData.some((provider) => provider.providerId === "password") &&
+      !currentUser.emailVerified
+    ) {
+      setError("Verify your email before creating or joining a room.")
+      return
+    }
     setBusy(true)
     try {
+      await saveUserProfile(userId, profileName)
+      setHasProfileName(true)
       if (tab === "create") {
         const createdAt = serverTimestamp()
         let title = "YouTube video"
@@ -96,7 +130,9 @@ export default function CreateRoom({
             updatedAt: createdAt,
           },
         })
+        void trackAnalyticsEvent("room_created")
       } else {
+        void trackAnalyticsEvent("room_join_attempt")
         const roomRef = ref(realtimeDatabase, `roomDirectory/${id}`)
         const snap = await Promise.race([
           get(roomRef),
@@ -111,8 +147,11 @@ export default function CreateRoom({
         window.clearTimeout(roomLookupTimeout)
         const room = snap.val()
         const roomAge = Date.now() - Number(room?.updatedAt ?? room?.createdAt ?? 0)
-        if (!snap.exists() || !room?.movieUrl || roomAge > 48 * 60 * 60 * 1000) {
-          setError("That room has expired or is no longer available. Start a new room instead.")
+        if (!snap.exists() || !room?.movieUrl || room.cleanupPending || roomAge > 48 * 60 * 60 * 1000) {
+          void trackAnalyticsEvent("room_join_failure", { reason: "expired" })
+          setError(room?.cleanupPending
+            ? "That room is closing and can no longer be joined. Start a new room instead."
+            : "That room has expired or is no longer available. Start a new room instead.")
           return
         }
         await set(
@@ -125,12 +164,22 @@ export default function CreateRoom({
         if (membership.val() !== true) {
           throw new Error("MEMBERSHIP_NOT_CONFIRMED")
         }
+        void trackAnalyticsEvent("room_join_success")
+        if (room.hostId && room.hostId !== currentUser.uid) {
+          void createNotification(room.hostId, {
+            title: "Someone joined your room",
+            body: `${room.title || "Your video"} is ready to watch together.`,
+            type: "invite",
+            roomId: id,
+          }).catch(() => {})
+        }
         onJoinRoom(id, snap.val().movieUrl)
         return
       }
       onCreateRoom(id, canonicalUrl!)
     } catch (error) {
       const codeError = error instanceof Error ? error.message : ""
+      if (tab === "join") void trackAnalyticsEvent("room_join_failure")
       setError(
         codeError === "ROOM_LOOKUP_TIMEOUT"
           ? "Room lookup timed out. Check your connection and try again."
@@ -138,7 +187,7 @@ export default function CreateRoom({
             ? "Firebase did not confirm your membership. Deploy the latest database rules and try again."
             : codeError.includes("PERMISSION_DENIED")
               ? tab === "join"
-                ? "That room may be full, or Firebase denied access. Check the code and try again."
+                ? "That room is full or unavailable. Check the code and try again."
                 : "Firebase denied room creation. Check the database rules and try again."
               : tab === "join"
                 ? "Could not join this room. Check the code and try again."
@@ -237,6 +286,23 @@ export default function CreateRoom({
                 required
                 aria-label="Six-character room code"
                 value={code}
+              />
+            </>
+          )}
+          {profileLoaded && !hasProfileName && (
+            <>
+              <label className={`mt-6 block text-xs font-bold uppercase ${muted}`} htmlFor="room-display-name">
+                Your display name
+              </label>
+              <input
+                autoComplete="nickname"
+                className="input-field focus-ring mt-2 rounded-xl px-4 py-3.5"
+                id="room-display-name"
+                maxLength={40}
+                minLength={2}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="How should people call you?"
+                value={profileName}
               />
             </>
           )}

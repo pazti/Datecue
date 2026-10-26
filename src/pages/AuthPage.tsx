@@ -9,13 +9,15 @@ import {
 } from "firebase/auth"
 import Logo, { Icon } from "../components/Logo"
 import { auth } from "../lib/firebase"
-import { saveUserProfile } from "../lib/rooms"
+import { recordLegalAcceptance, saveUserProfile } from "../lib/rooms"
+import { LEGAL_VERSION, type LegalDocument } from "./LegalPage"
 
 interface Props {
   darkMode: boolean
   onToggleDark: () => void
   onBack: () => void
   onSuccess: () => void
+  onLegal: (document: LegalDocument) => void
 }
 
 export default function AuthPage({
@@ -23,6 +25,7 @@ export default function AuthPage({
   onToggleDark,
   onBack,
   onSuccess,
+  onLegal,
 }: Props) {
   const [mode, setMode] = useState<"login" | "signup">("login")
   const [email, setEmail] = useState("")
@@ -31,6 +34,9 @@ export default function AuthPage({
   const [error, setError] = useState("")
   const [resetSent, setResetSent] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
+  const [verificationRequired, setVerificationRequired] = useState(false)
+  const [profileNeedsSaving, setProfileNeedsSaving] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [busy, setBusy] = useState(false)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
@@ -39,13 +45,19 @@ export default function AuthPage({
     event.preventDefault()
     setError("")
     setResetSent(false)
+    if (mode === "signup" && !acceptedTerms) {
+      setError("Agree to the Terms of Service before creating an account.")
+      return
+    }
     setBusy(true)
     try {
       if (mode === "login") {
         await signInWithEmailAndPassword(auth, email.trim(), password)
         if (auth.currentUser && !auth.currentUser.emailVerified) {
+          setVerificationRequired(true)
           await sendEmailVerification(auth.currentUser)
           setVerificationSent(true)
+          return
         }
       } else {
         if (displayName.trim().length < 2) {
@@ -53,7 +65,11 @@ export default function AuthPage({
           return
         }
         const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
-        await saveUserProfile(credential.user.uid, displayName)
+        setProfileNeedsSaving(true)
+        setVerificationRequired(true)
+        await sendEmailVerification(credential.user)
+        setVerificationSent(true)
+        return
       }
       onSuccess()
     } catch (caught) {
@@ -82,8 +98,49 @@ export default function AuthPage({
     }
   }
 
+  const checkVerification = async () => {
+    setError("")
+    setBusy(true)
+    try {
+      await auth.currentUser?.reload()
+      if (!auth.currentUser?.emailVerified) {
+        setError("Your email is not verified yet. Open the link in your inbox and try again.")
+        return
+      }
+      await auth.currentUser.getIdToken(true)
+      if (profileNeedsSaving) {
+        await saveUserProfile(auth.currentUser.uid, displayName)
+        setProfileNeedsSaving(false)
+      }
+      await recordLegalAcceptance(auth.currentUser.uid, LEGAL_VERSION)
+      onSuccess()
+    } catch {
+      setError("We couldn't check verification yet. Check your connection and retry.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resendVerification = async () => {
+    if (!auth.currentUser) return
+    setError("")
+    setBusy(true)
+    try {
+      await sendEmailVerification(auth.currentUser)
+      setVerificationSent(true)
+    } catch {
+      setError("We couldn't resend the verification link. Wait a moment and retry.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const signInWithGoogle = async () => {
     setError("")
+    if (!acceptedTerms) {
+      setError("Agree to the Terms of Service before continuing with Google.")
+      return
+    }
     setBusy(true)
     try {
       const credential = await signInWithPopup(auth, new GoogleAuthProvider())
@@ -92,6 +149,7 @@ export default function AuthPage({
         credential.user.displayName || displayName || "Datecue guest",
       )
       void profile
+      await recordLegalAcceptance(credential.user.uid, LEGAL_VERSION)
       onSuccess()
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : ""
@@ -178,6 +236,23 @@ export default function AuthPage({
               </button>
             ))}
           </div>
+          <div className="mb-5 flex items-start gap-3 text-sm leading-relaxed">
+            <input
+              checked={acceptedTerms}
+              className="mt-1 accent-[#d86856]"
+              id="accept-legal"
+              onChange={(event) => setAcceptedTerms(event.target.checked)}
+              type="checkbox"
+            />
+            <div>
+              <label htmlFor="accept-legal">I agree to the Terms of Service and acknowledge the Privacy Policy.</label>
+              <p className="mt-1">
+              <button className="text-coral underline underline-offset-2" onClick={() => onLegal("terms")} type="button">Terms of Service</button>
+              {" · "}
+              <button className="text-coral underline underline-offset-2" onClick={() => onLegal("privacy")} type="button">Privacy Policy</button>.
+              </p>
+            </div>
+          </div>
           {mode === "signup" && (
             <>
               <label
@@ -251,10 +326,16 @@ export default function AuthPage({
             type="password"
             value={password}
           />
-          {verificationSent && (
-            <p className="mt-4 rounded-xl bg-moss/10 px-3 py-2 text-sm text-moss" role="status">
-              We sent a verification link. You can continue, but verify your email to keep your account secure.
-            </p>
+          {verificationRequired && (
+            <div className="mt-4 space-y-3 rounded-xl bg-moss/10 px-3 py-3 text-sm text-moss" role="status">
+              <p>{verificationSent ? "We sent a verification link. Verify your email before continuing." : "Verify your email before continuing."}</p>
+              <button className="button-primary focus-ring w-full rounded-lg px-3 py-2 font-bold" disabled={busy} onClick={() => void checkVerification()} type="button">
+                {busy ? "Checking…" : "I've verified my email"}
+              </button>
+              <button className="focus-ring w-full rounded-lg border border-current px-3 py-2 font-bold" disabled={busy} onClick={() => void resendVerification()} type="button">
+                Resend verification link
+              </button>
+            </div>
           )}
           {error && (
             <p

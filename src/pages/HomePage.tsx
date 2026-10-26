@@ -2,8 +2,9 @@ import { useEffect, useState } from "react"
 import { onValue, ref } from "firebase/database"
 import { formatDuration, realtimeDatabase } from "../lib/firebase"
 import { joinRoom } from "../lib/rooms"
-import { clearNotification, markNotificationAsRead } from "../lib/notifications"
+import { clearNotification, createNotification, markNotificationAsRead } from "../lib/notifications"
 import Logo, { Icon } from "../components/Logo"
+import type { LegalDocument } from "./LegalPage"
 
 interface Props {
   userId: string
@@ -13,12 +14,14 @@ interface Props {
   onJoin: () => void
   onOpenRoom: (roomId: string, movieUrl: string) => void
   onLogout: () => Promise<void>
+  onLegal: (document: LegalDocument) => void
 }
 
 interface HistoryItem {
   roomId: string
   movieUrl: string
   title?: string
+  thumbnailUrl?: string | null
   watchedSeconds?: number
   updatedAt?: number
 }
@@ -38,6 +41,7 @@ export default function HomePage({
   onJoin,
   onOpenRoom,
   onLogout,
+  onLegal,
 }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [roomCount, setRoomCount] = useState(0)
@@ -55,9 +59,9 @@ export default function HomePage({
         (snapshot) => {
           const value = snapshot.val() ?? {}
           const allHistory = Object.entries(value.history ?? {})
-            .map(([roomId, item]) => ({
-              roomId,
+            .map(([historyKey, item]) => ({
               ...item as Omit<HistoryItem, "roomId">,
+              roomId: (item as { roomId?: string }).roomId || historyKey,
             }))
             .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
           setTotalSeconds(value.stats?.watchSeconds ?? 0)
@@ -83,11 +87,24 @@ export default function HomePage({
   const openHistoryRoom = async (item: HistoryItem) => {
     setError("")
     try {
-      await joinRoom(item.roomId, userId)
+      const room = await joinRoom(item.roomId, userId)
+      if (room.hostId && room.hostId !== userId) {
+        void createNotification(room.hostId, {
+          title: "Someone rejoined your room",
+          body: `${room.title || "Your video"} is ready to watch together.`,
+          type: "invite",
+          roomId: item.roomId,
+        }).catch(() => {})
+      }
       onOpenRoom(item.roomId, item.movieUrl)
-    } catch {
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : ""
       setError(
-        "That room is no longer available. Start a new room or join with a current code.",
+        code === "ROOM_EXPIRED"
+          ? "That room has ended or expired. Start a new room or join with a current code."
+          : code.includes("PERMISSION_DENIED")
+            ? "That room is full or unavailable. Join with a current room code instead."
+            : "That room is no longer available. Start a new room or join with a current code.",
       )
     }
   }
@@ -298,6 +315,14 @@ export default function HomePage({
                   className="soft-card focus-ring flex w-full items-center justify-between gap-4 rounded-2xl p-4 text-left transition hover:-translate-y-0.5"
                   type="button"
                 >
+                  {item.thumbnailUrl && (
+                    <img
+                      alt=""
+                      className="h-14 w-24 shrink-0 rounded-lg object-cover"
+                      loading="lazy"
+                      src={item.thumbnailUrl}
+                    />
+                  )}
                   <span className="min-w-0">
                     <span className="block truncate font-bold">
                       {item.title || `Room ${item.roomId}`}
@@ -313,6 +338,15 @@ export default function HomePage({
           </div>
         </section>
       </main>
+      <footer className="border-t hairline px-5 py-6 sm:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 text-sm text-muted-ink">
+          <span>Datecue</span>
+          <nav aria-label="Legal documents" className="flex gap-4">
+            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("privacy")} type="button">Privacy</button>
+            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("terms")} type="button">Terms</button>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 }
