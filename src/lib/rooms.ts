@@ -41,6 +41,18 @@ export async function joinRoom(roomId: string, userId: string) {
   return set(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`), true)
 }
 
+export async function saveUserProfile(userId: string, displayName: string) {
+  return update(ref(realtimeDatabase, `users/${userId}/profile`), {
+    displayName: displayName.trim().slice(0, 40),
+    updatedAt: Date.now(),
+  })
+}
+
+export async function getUserProfile(userId: string) {
+  const snap = await get(ref(realtimeDatabase, `users/${userId}/profile`))
+  return snap.val() as { displayName?: string } | null
+}
+
 export async function leaveRoom(roomId: string, userId: string) {
   return Promise.all([
     remove(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`)),

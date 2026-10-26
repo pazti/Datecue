@@ -6,6 +6,7 @@ import {
 } from "firebase/auth"
 import Logo, { Icon } from "../components/Logo"
 import { auth } from "../lib/firebase"
+import { saveUserProfile } from "../lib/rooms"
 
 interface Props {
   darkMode: boolean
@@ -23,6 +24,7 @@ export default function AuthPage({
   const [mode, setMode] = useState<"login" | "signup">("login")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [displayName, setDisplayName] = useState("")
   const [error, setError] = useState("")
   const [resetSent, setResetSent] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -35,9 +37,16 @@ export default function AuthPage({
     setResetSent(false)
     setBusy(true)
     try {
-      if (mode === "login")
+      if (mode === "login") {
         await signInWithEmailAndPassword(auth, email.trim(), password)
-      else await createUserWithEmailAndPassword(auth, email.trim(), password)
+      } else {
+        if (displayName.trim().length < 2) {
+          setError("Choose a display name with at least 2 characters.")
+          return
+        }
+        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
+        await saveUserProfile(credential.user.uid, displayName)
+      }
       onSuccess()
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : ""
@@ -142,8 +151,29 @@ export default function AuthPage({
               </button>
             ))}
           </div>
+          {mode === "signup" && (
+            <>
+              <label
+                className={`mb-2 block text-xs font-bold uppercase tracking-[.16em] ${muted}`}
+                htmlFor="auth-display-name"
+              >
+                Display name
+              </label>
+              <input
+                autoComplete="nickname"
+                className="input-field focus-ring rounded-xl px-4 py-3.5 text-sm"
+                id="auth-display-name"
+                maxLength={40}
+                minLength={2}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="How should people call you?"
+                required
+                value={displayName}
+              />
+            </>
+          )}
           <label
-            className={`mb-2 block text-xs font-bold uppercase tracking-[.16em] ${muted}`}
+            className={`mb-2 mt-5 block text-xs font-bold uppercase tracking-[.16em] ${muted}`}
             htmlFor="auth-email"
           >
             Email

@@ -19,6 +19,7 @@ import {
   isValidReaction,
   sanitizeMessage,
 } from "../lib/validation"
+import { getUserProfile, saveUserProfile } from "../lib/rooms"
 
 interface Props {
   onLeave: () => void
@@ -32,6 +33,7 @@ interface Props {
 interface Message {
   id: string
   uid: string
+  senderName?: string
   text: string
   createdAt: number
 }
@@ -79,6 +81,10 @@ export default function WatchRoom({
   const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
   const [roomError, setRoomError] = useState("")
+  const [displayName, setDisplayName] = useState("")
+  const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
+  const [nameDraft, setNameDraft] = useState("")
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [sending, setSending] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
@@ -101,6 +107,33 @@ export default function WatchRoom({
     (item) => item.online,
   ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
+
+  useEffect(() => {
+    void getUserProfile(userId).then((profile) => {
+      const name = profile?.displayName?.trim() ?? ""
+      setDisplayName(name)
+      setNameDraft(name)
+      setShowNamePrompt(!name)
+    }).catch(() => setShowNamePrompt(true))
+  }, [userId])
+
+  useEffect(() => {
+    const names: Record<string, string> = {}
+    for (const uid of Object.keys(presence)) {
+      void getUserProfile(uid).then((profile) => {
+        if (profile?.displayName) setParticipantNames((current) => ({ ...current, [uid]: profile.displayName! }))
+      })
+    }
+    setParticipantNames((current) => ({ ...current, ...names }))
+  }, [presence])
+
+  const saveName = async () => {
+    const name = nameDraft.trim().slice(0, 40)
+    if (name.length < 2) return
+    await saveUserProfile(userId, name)
+    setDisplayName(name)
+    setShowNamePrompt(false)
+  }
 
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
@@ -409,6 +442,7 @@ export default function WatchRoom({
     try {
       await push(ref(realtimeDatabase, `rooms/${roomId}/messages`), {
         uid: userId,
+        senderName: displayName || "Guest",
         text: value,
         createdAt: serverTimestamp(),
       })
@@ -665,9 +699,13 @@ export default function WatchRoom({
                       ? "ml-auto bg-coral text-ivory"
                       : "bg-sand/60"
                   }`}
-                >
+                  >
+                  <span className="mb-1 block text-[10px] font-bold opacity-70">
+                    {message.uid === userId ? "You" : message.senderName || participantNames[message.uid] || "Guest"}
+                  </span>
                   {message.text}
                   <span className="mt-1 block text-[10px] opacity-70">
+
                     {new Date(message.createdAt).toLocaleTimeString([], {
                       hour: "numeric",
                       minute: "2-digit",
@@ -710,6 +748,18 @@ export default function WatchRoom({
           </div>
         </aside>
       </main>
+
+      {showNamePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" role="dialog" aria-modal="true" aria-labelledby="name-title">
+          <section className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl">
+            <p className="mono text-xs uppercase tracking-[.16em] text-coral">One small thing</p>
+            <h2 className="mt-3 text-3xl" id="name-title">What should they call you?</h2>
+            <p className="mt-2 text-sm text-muted-ink">Your name appears beside messages and in the room.</p>
+            <input className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3" autoFocus maxLength={40} minLength={2} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Display name" />
+            <button className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold" disabled={nameDraft.trim().length < 2} onClick={() => void saveName()} type="button">Save name</button>
+          </section>
+        </div>
+      )}
 
       {inviteUrl && (
         <div
