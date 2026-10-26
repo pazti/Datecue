@@ -67,10 +67,19 @@ export default function CreateRoom({
     try {
       if (tab === "create") {
         const createdAt = serverTimestamp()
+        let title = "YouTube video"
+        try {
+          const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl!)}&format=json`)
+          if (oembed.ok) title = String((await oembed.json()).title || title).slice(0, 120)
+        } catch {
+          // History can still be saved when YouTube metadata is unavailable.
+        }
         await update(ref(realtimeDatabase), {
           [`rooms/${id}`]: {
             movieUrl: canonicalUrl,
+            title,
             createdAt,
+            updatedAt: createdAt,
             hostId: userId,
             members: { [userId]: true },
             public: {
@@ -81,8 +90,10 @@ export default function CreateRoom({
           },
           [`roomDirectory/${id}`]: {
             movieUrl: canonicalUrl,
+            title,
             hostId: userId,
             createdAt,
+            updatedAt: createdAt,
           },
         })
       } else {
@@ -98,8 +109,10 @@ export default function CreateRoom({
           ),
         ])
         window.clearTimeout(roomLookupTimeout)
-        if (!snap.exists() || !snap.val()?.movieUrl) {
-          setError("That room does not exist or is no longer available.")
+        const room = snap.val()
+        const roomAge = Date.now() - Number(room?.updatedAt ?? room?.createdAt ?? 0)
+        if (!snap.exists() || !room?.movieUrl || roomAge > 48 * 60 * 60 * 1000) {
+          setError("That room has expired or is no longer available. Start a new room instead.")
           return
         }
         await set(

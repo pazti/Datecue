@@ -10,6 +10,7 @@ import {
   remove,
   serverTimestamp,
   set,
+  update,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
 import { realtimeDatabase, youtubeIdFromUrl } from "../lib/firebase"
@@ -19,6 +20,7 @@ import {
   isValidReaction,
   sanitizeMessage,
 } from "../lib/validation"
+import { getUserProfile, saveUserProfile } from "../lib/rooms"
 
 interface Props {
   onLeave: () => void
@@ -32,6 +34,7 @@ interface Props {
 interface Message {
   id: string
   uid: string
+  senderName?: string
   text: string
   createdAt: number
 }
@@ -70,6 +73,8 @@ export default function WatchRoom({
     online?: boolean
   }>>({})
   const [playback, setPlayback] = useState<Playback>({})
+  const [hostId, setHostId] = useState<string | null>(null)
+  const [roomTitle, setRoomTitle] = useState("YouTube video")
   const [isPlaying, setIsPlaying] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
   const [text, setText] = useState("")
@@ -79,6 +84,12 @@ export default function WatchRoom({
   const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
   const [roomError, setRoomError] = useState("")
+  const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
+  const [displayName, setDisplayName] = useState("")
+  const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
+  const [nameDraft, setNameDraft] = useState("")
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [hostLeft, setHostLeft] = useState(false)
   const [sending, setSending] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
@@ -101,6 +112,38 @@ export default function WatchRoom({
     (item) => item.online,
   ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
+
+  useEffect(() => {
+    void getUserProfile(userId).then((profile) => {
+      const name = profile?.displayName?.trim() ?? ""
+      setDisplayName(name)
+      setNameDraft(name)
+      setShowNamePrompt(!name)
+    }).catch(() => setShowNamePrompt(true))
+  }, [userId])
+
+  useEffect(() => {
+    const hostId = roomHostRef.current
+    setHostLeft(Boolean(hostId && hostId !== userId && !presence[hostId]?.online))
+  }, [presence, userId, playback.hostId])
+
+  useEffect(() => {
+    const names: Record<string, string> = {}
+    for (const uid of Object.keys(presence)) {
+      void getUserProfile(uid).then((profile) => {
+        if (profile?.displayName) setParticipantNames((current) => ({ ...current, [uid]: profile.displayName! }))
+      })
+    }
+    setParticipantNames((current) => ({ ...current, ...names }))
+  }, [presence])
+
+  const saveName = async () => {
+    const name = nameDraft.trim().slice(0, 40)
+    if (name.length < 2) return
+    await saveUserProfile(userId, name)
+    setDisplayName(name)
+    setShowNamePrompt(false)
+  }
 
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
@@ -156,7 +199,10 @@ export default function WatchRoom({
       onValue(
         ref(realtimeDatabase, `roomDirectory/${roomId}`),
         (snap) => {
-          roomHostRef.current = snap.val()?.hostId ?? null
+          const value = snap.val() ?? {}
+          roomHostRef.current = value.hostId ?? null
+          setHostId(value.hostId ?? null)
+          setRoomTitle(value.title || "YouTube video")
         },
         fail,
       ),
@@ -182,6 +228,11 @@ export default function WatchRoom({
               .sort((a, b) => a.createdAt - b.createdAt),
           )
         },
+        fail,
+      ),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/typing`),
+        (snap) => setTypingUsers(snap.val() ?? {}),
         fail,
       ),
       onValue(
@@ -217,122 +268,13 @@ export default function WatchRoom({
         movieUrl,
         watchedSecondsRef.current,
         sessionIdRef.current,
+        roomTitle,
       ).catch(() => setRoomError(WATCH_SAVE_ERROR))
       membershipCleanupTimerRef.current = window.setTimeout(() => {
         void remove(memberRef)
       }, 0)
     }
-  }, [movieUrl, roomId, userId])
-
-  useEffect(() => {
-    setVideoError(false)
-    setPlayerReady(false)
-    if (!videoId) return
-
-    let timeout = 0
-    let script: HTMLScriptElement | null = null
-    let previousReady: (() => void) | undefined
-    let readyCallback: (() => void) | undefined
-    let scriptError: (() => void) | undefined
-
-    const createPlayer = () => {
-      if (!window.YT?.Player) return
-      window.clearTimeout(timeout)
-      playerRef.current?.destroy?.()
-      playerRef.current = new window.YT.Player(`youtube-player-${roomId}`, {
-        videoId,
-        playerVars: {
-          playsinline: 1,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: () => setPlayerReady(true),
-          onError: () => {
-            setVideoError(true)
-            setRoomError(
-              "YouTube couldn't play this video. It may be restricted from embedding.",
-            )
-          },
-          onStateChange: (event: any) => {
-            if (![0, 1, 2].includes(event.data)) return
-            const playing = event.data === 1
-            isPlayingRef.current = playing
-            setIsPlaying(playing)
-            void publishPlayback(playing, event.target.getCurrentTime())
-          },
-        },
-      })
-    }
-
-    if (window.YT?.Player) {
-      createPlayer()
-    } else {
-      script = document.querySelector("script[data-youtube-api]")
-      if (!script) {
-        script = document.createElement("script")
-        script.src = "https://www.youtube.com/iframe_api"
-        script.dataset.youtubeApi = "true"
-        document.body.appendChild(script)
-      }
-      previousReady = window.onYouTubeIframeAPIReady
-      readyCallback = () => {
-        previousReady?.()
-        createPlayer()
-      }
-      window.onYouTubeIframeAPIReady = readyCallback
-      scriptError = () => {
-        window.clearTimeout(timeout)
-        setVideoError(true)
-        setRoomError(
-          "The YouTube player couldn't load. Check your connection and try again.",
-        )
-      }
-      script.addEventListener("error", scriptError, { once: true })
-      timeout = window.setTimeout(() => {
-        setVideoError(true)
-        setRoomError("The YouTube player took too long to load.")
-      }, 12_000)
-    }
-
-    return () => {
-      window.clearTimeout(timeout)
-      if (script && scriptError)
-        script.removeEventListener("error", scriptError)
-      if (readyCallback && window.onYouTubeIframeAPIReady === readyCallback)
-        window.onYouTubeIframeAPIReady = previousReady
-      playerRef.current?.destroy?.()
-      playerRef.current = null
-      isPlayingRef.current = false
-      setPlayerReady(false)
-    }
-  }, [roomId, videoId, publishPlayback])
-
-  useEffect(() => {
-    if (!playerReady || !playback.updatedAt || playback.hostId === userId)
-      return
-    const player = playerRef.current
-    if (!player) return
-    const target =
-      (playback.currentTime ?? 0) +
-      (playback.playing
-        ? Math.max(0, Date.now() - playback.updatedAt) / 1000
-        : 0)
-    const currentTime = player.getCurrentTime?.() ?? 0
-    if (Math.abs(currentTime - target) > 1.5) player.seekTo?.(target, true)
-    isPlayingRef.current = Boolean(playback.playing)
-    setIsPlaying(Boolean(playback.playing))
-    playback.playing ? player.playVideo?.() : player.pauseVideo?.()
-  }, [playback, playerReady, userId])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (isPlayingRef.current) watchedSecondsRef.current += 1
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  }, [movieUrl, roomId, roomTitle, userId])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
@@ -398,6 +340,30 @@ export default function WatchRoom({
     return () => window.removeEventListener("keydown", closeOnEscape)
   }, [inviteUrl])
 
+  const syncNow = () => {
+    const player = playerRef.current
+    if (!player || !playback.updatedAt) return
+    const target = (playback.currentTime ?? 0) + (playback.playing ? Math.max(0, Date.now() - playback.updatedAt) / 1000 : 0)
+    player.seekTo?.(target, true)
+    playback.playing ? player.playVideo?.() : player.pauseVideo?.()
+  }
+
+  const takeControl = async () => {
+    if (!hostLeft) return
+    try {
+      await update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/hostId`]: userId,
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+        [`roomDirectory/${roomId}/hostId`]: userId,
+        [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
+      })
+      roomHostRef.current = userId
+      setHostLeft(false)
+    } catch {
+      setRoomError("Could not take control yet. Check your connection and try again.")
+    }
+  }
+
   const sendMessage = async () => {
     const value = sanitizeMessage(text.trim())
     if (!isValidMessage(value)) {
@@ -409,6 +375,7 @@ export default function WatchRoom({
     try {
       await push(ref(realtimeDatabase, `rooms/${roomId}/messages`), {
         uid: userId,
+        senderName: displayName || "Guest",
         text: value,
         createdAt: serverTimestamp(),
       })
@@ -478,6 +445,21 @@ export default function WatchRoom({
     }
   }
 
+  const endRoom = async () => {
+    if (hostId !== userId || leaving) return
+    setLeaving(true)
+    try {
+      await Promise.all([
+        remove(ref(realtimeDatabase, `rooms/${roomId}`)),
+        remove(ref(realtimeDatabase, `roomDirectory/${roomId}`)),
+      ])
+      onLeave()
+    } catch {
+      setRoomError("The room could not be ended. Check your connection and try again.")
+      setLeaving(false)
+    }
+  }
+
   const leaveRoom = async () => {
     if (leaving) return
     setLeaving(true)
@@ -506,6 +488,8 @@ export default function WatchRoom({
   }
 
   const latestReactions = useMemo(() => reactions.slice(-12), [reactions])
+  const initials = (name: string) => name.trim().split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "G"
+  const avatarColor = (uid: string) => ["bg-coral", "bg-moss", "bg-navy", "bg-[#9b6b43]"][uid.charCodeAt(0) % 4]
 
   return (
     <div className={`min-h-[100dvh] ${surface}`}>
@@ -521,6 +505,16 @@ export default function WatchRoom({
         </button>
         <div className="hidden text-sm font-bold sm:block">Room {roomId}</div>
         <div className="flex items-center gap-2">
+          {hostId === userId && (
+            <button
+              className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
+              disabled={leaving}
+              onClick={() => void endRoom()}
+              type="button"
+            >
+              End room
+            </button>
+          )}
           <button
             className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
             onClick={() => void invite()}
@@ -577,6 +571,18 @@ export default function WatchRoom({
                 ? "Playing together"
                 : "Paused"}
           </div>
+          {hostId !== userId && (
+            <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
+              <span>Guest mode · playback follows the host</span>
+              <button className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10" onClick={syncNow} type="button">Sync now</button>
+            </div>
+          )}
+          {hostLeft && (
+            <div className="absolute left-4 right-4 top-16 z-20 flex items-center justify-between gap-3 rounded-2xl bg-coral px-4 py-3 text-sm text-ivory shadow-lg">
+              <span>Host left — take control?</span>
+              <button className="rounded-full bg-ivory px-3 py-1 font-bold text-ink" onClick={() => void takeControl()} type="button">Take control</button>
+            </div>
+          )}
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
               <div className="reaction-tray flex items-center gap-1 rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
@@ -658,23 +664,36 @@ export default function WatchRoom({
               </p>
             ) : (
               messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[88%] break-words rounded-2xl px-3 py-2 text-sm ${
+                  <div key={message.id} className={`flex max-w-[92%] items-end gap-2 ${message.uid === userId ? "ml-auto flex-row-reverse" : ""}`}>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-ivory ${avatarColor(message.uid)}`} aria-hidden="true">
+                      {initials(message.uid === userId ? displayName : message.senderName || participantNames[message.uid] || "Guest")}
+                    </span>
+                    <div
+                    className={`break-words rounded-2xl px-3 py-2 text-sm ${
                     message.uid === userId
                       ? "ml-auto bg-coral text-ivory"
                       : "bg-sand/60"
                   }`}
-                >
+                  >
+                  <span className="mb-1 block text-[10px] font-bold opacity-70">
+                    {message.uid === userId ? "You" : message.senderName || participantNames[message.uid] || "Guest"}
+                  </span>
                   {message.text}
                   <span className="mt-1 block text-[10px] opacity-70">
+
                     {new Date(message.createdAt).toLocaleTimeString([], {
                       hour: "numeric",
                       minute: "2-digit",
                     })}
                   </span>
-                </div>
-              ))
+                    </div>
+                  </div>
+                ))
+            )}
+            {Object.entries(typingUsers).some(([uid, typing]) => uid !== userId && typing) && (
+              <p className="px-2 text-xs italic text-muted-ink" role="status">
+                Someone is typing…
+              </p>
             )}
             <div ref={messageEndRef} />
           </div>
@@ -684,7 +703,12 @@ export default function WatchRoom({
                 className="input-field focus-ring min-w-0 rounded-2xl px-4 py-3 text-sm"
                 value={text}
                 maxLength={500}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setText(next)
+                  void set(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`), Boolean(next.trim()))
+                }}
+                onBlur={() => void remove(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`))}
                 onKeyDown={(event) => {
                   if (
                     event.key === "Enter" &&
@@ -710,6 +734,18 @@ export default function WatchRoom({
           </div>
         </aside>
       </main>
+
+      {showNamePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" role="dialog" aria-modal="true" aria-labelledby="name-title">
+          <section className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl">
+            <p className="mono text-xs uppercase tracking-[.16em] text-coral">One small thing</p>
+            <h2 className="mt-3 text-3xl" id="name-title">What should they call you?</h2>
+            <p className="mt-2 text-sm text-muted-ink">Your name appears beside messages and in the room.</p>
+            <input className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3" autoFocus maxLength={40} minLength={2} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Display name" />
+            <button className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold" disabled={nameDraft.trim().length < 2} onClick={() => void saveName()} type="button">Save name</button>
+          </section>
+        </div>
+      )}
 
       {inviteUrl && (
         <div

@@ -18,27 +18,34 @@ export async function createRoom(
   roomId: string,
   hostId: string,
   movieUrl: string,
+  title = "YouTube video",
 ) {
   const now = Date.now()
+  const metadata = { hostId, movieUrl, title, createdAt: now, updatedAt: now }
   return update(ref(realtimeDatabase), {
     [`rooms/${roomId}`]: {
-      hostId,
-      movieUrl,
-      createdAt: now,
-      updatedAt: now,
+      ...metadata,
       members: { [hostId]: true },
-      public: { hostId, movieUrl, createdAt: now },
+      public: metadata,
     },
-    [`roomDirectory/${roomId}`]: {
-      hostId,
-      movieUrl,
-      createdAt: now,
-    },
+    [`roomDirectory/${roomId}`]: metadata,
   })
 }
 
 export async function joinRoom(roomId: string, userId: string) {
   return set(ref(realtimeDatabase, `rooms/${roomId}/members/${userId}`), true)
+}
+
+export async function saveUserProfile(userId: string, displayName: string) {
+  return update(ref(realtimeDatabase, `users/${userId}/profile`), {
+    displayName: displayName.trim().slice(0, 40),
+    updatedAt: Date.now(),
+  })
+}
+
+export async function getUserProfile(userId: string) {
+  const snap = await get(ref(realtimeDatabase, `users/${userId}/profile`))
+  return snap.val() as { displayName?: string } | null
 }
 
 export async function leaveRoom(roomId: string, userId: string) {
@@ -82,6 +89,7 @@ export async function recordWatchSession(
   movieUrl: string,
   watchSeconds: number,
   sessionId: string,
+  title = "YouTube video",
 ) {
   const cumulativeSeconds = Math.max(0, Math.floor(watchSeconds))
   if (!Number.isFinite(cumulativeSeconds) || cumulativeSeconds <= 0) return
@@ -106,6 +114,7 @@ export async function recordWatchSession(
         ...history,
         [roomId]: {
           movieUrl,
+          title,
           watchedSeconds: (previous.watchedSeconds ?? 0) + addedSeconds,
           updatedAt: Date.now(),
           sessions: { ...sessions, [sessionId]: cumulativeSeconds },
