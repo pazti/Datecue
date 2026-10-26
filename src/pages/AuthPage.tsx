@@ -1,8 +1,11 @@
 import { useState } from "react"
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
 } from "firebase/auth"
 import Logo, { Icon } from "../components/Logo"
 import { auth } from "../lib/firebase"
@@ -27,6 +30,7 @@ export default function AuthPage({
   const [displayName, setDisplayName] = useState("")
   const [error, setError] = useState("")
   const [resetSent, setResetSent] = useState(false)
+  const [verificationSent, setVerificationSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
@@ -39,6 +43,10 @@ export default function AuthPage({
     try {
       if (mode === "login") {
         await signInWithEmailAndPassword(auth, email.trim(), password)
+        if (auth.currentUser && !auth.currentUser.emailVerified) {
+          await sendEmailVerification(auth.currentUser)
+          setVerificationSent(true)
+        }
       } else {
         if (displayName.trim().length < 2) {
           setError("Choose a display name with at least 2 characters.")
@@ -69,6 +77,25 @@ export default function AuthPage({
                         ? "Email sign-in is disabled for this Firebase project."
                         : "Unable to authenticate. Check your details and try again.",
       )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const signInWithGoogle = async () => {
+    setError("")
+    setBusy(true)
+    try {
+      const credential = await signInWithPopup(auth, new GoogleAuthProvider())
+      const profile = await saveUserProfile(
+        credential.user.uid,
+        credential.user.displayName || displayName || "Datecue guest",
+      )
+      void profile
+      onSuccess()
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : ""
+      setError(code.includes("popup-closed-by-user") ? "Google sign-in was cancelled." : "Google sign-in failed. Try again.")
     } finally {
       setBusy(false)
     }
@@ -224,6 +251,11 @@ export default function AuthPage({
             type="password"
             value={password}
           />
+          {verificationSent && (
+            <p className="mt-4 rounded-xl bg-moss/10 px-3 py-2 text-sm text-moss" role="status">
+              We sent a verification link. You can continue, but verify your email to keep your account secure.
+            </p>
+          )}
           {error && (
             <p
               role="alert"
@@ -233,7 +265,16 @@ export default function AuthPage({
             </p>
           )}
           <button
-            className="button-primary focus-ring mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-bold"
+            className="button-quiet focus-ring flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3.5 text-sm font-bold"
+            disabled={busy}
+            onClick={() => void signInWithGoogle()}
+            type="button"
+          >
+            Continue with Google
+          </button>
+          <div className={`my-4 flex items-center gap-3 text-xs ${muted}`}><span className="h-px flex-1 bg-current opacity-20" />or<span className="h-px flex-1 bg-current opacity-20" /></div>
+          <button
+            className="button-primary focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-bold"
             disabled={busy}
             type="submit"
           >

@@ -84,6 +84,7 @@ export default function WatchRoom({
   const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
   const [roomError, setRoomError] = useState("")
+  const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
   const [displayName, setDisplayName] = useState("")
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
   const [nameDraft, setNameDraft] = useState("")
@@ -227,6 +228,11 @@ export default function WatchRoom({
               .sort((a, b) => a.createdAt - b.createdAt),
           )
         },
+        fail,
+      ),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/typing`),
+        (snap) => setTypingUsers(snap.val() ?? {}),
         fail,
       ),
       onValue(
@@ -684,6 +690,11 @@ export default function WatchRoom({
                   </div>
                 ))
             )}
+            {Object.entries(typingUsers).some(([uid, typing]) => uid !== userId && typing) && (
+              <p className="px-2 text-xs italic text-muted-ink" role="status">
+                Someone is typing…
+              </p>
+            )}
             <div ref={messageEndRef} />
           </div>
           <div className="border-t hairline p-3 sm:p-4">
@@ -692,7 +703,12 @@ export default function WatchRoom({
                 className="input-field focus-ring min-w-0 rounded-2xl px-4 py-3 text-sm"
                 value={text}
                 maxLength={500}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setText(next)
+                  void set(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`), Boolean(next.trim()))
+                }}
+                onBlur={() => void remove(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`))}
                 onKeyDown={(event) => {
                   if (
                     event.key === "Enter" &&
