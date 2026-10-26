@@ -73,6 +73,8 @@ export default function WatchRoom({
     online?: boolean
   }>>({})
   const [playback, setPlayback] = useState<Playback>({})
+  const [hostId, setHostId] = useState<string | null>(null)
+  const [roomTitle, setRoomTitle] = useState("YouTube video")
   const [isPlaying, setIsPlaying] = useState(false)
   const [playerReady, setPlayerReady] = useState(false)
   const [text, setText] = useState("")
@@ -196,7 +198,10 @@ export default function WatchRoom({
       onValue(
         ref(realtimeDatabase, `roomDirectory/${roomId}`),
         (snap) => {
-          roomHostRef.current = snap.val()?.hostId ?? null
+          const value = snap.val() ?? {}
+          roomHostRef.current = value.hostId ?? null
+          setHostId(value.hostId ?? null)
+          setRoomTitle(value.title || "YouTube video")
         },
         fail,
       ),
@@ -257,122 +262,13 @@ export default function WatchRoom({
         movieUrl,
         watchedSecondsRef.current,
         sessionIdRef.current,
+        roomTitle,
       ).catch(() => setRoomError(WATCH_SAVE_ERROR))
       membershipCleanupTimerRef.current = window.setTimeout(() => {
         void remove(memberRef)
       }, 0)
     }
-  }, [movieUrl, roomId, userId])
-
-  useEffect(() => {
-    setVideoError(false)
-    setPlayerReady(false)
-    if (!videoId) return
-
-    let timeout = 0
-    let script: HTMLScriptElement | null = null
-    let previousReady: (() => void) | undefined
-    let readyCallback: (() => void) | undefined
-    let scriptError: (() => void) | undefined
-
-    const createPlayer = () => {
-      if (!window.YT?.Player) return
-      window.clearTimeout(timeout)
-      playerRef.current?.destroy?.()
-      playerRef.current = new window.YT.Player(`youtube-player-${roomId}`, {
-        videoId,
-        playerVars: {
-          playsinline: 1,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: () => setPlayerReady(true),
-          onError: () => {
-            setVideoError(true)
-            setRoomError(
-              "YouTube couldn't play this video. It may be restricted from embedding.",
-            )
-          },
-          onStateChange: (event: any) => {
-            if (![0, 1, 2].includes(event.data)) return
-            const playing = event.data === 1
-            isPlayingRef.current = playing
-            setIsPlaying(playing)
-            void publishPlayback(playing, event.target.getCurrentTime())
-          },
-        },
-      })
-    }
-
-    if (window.YT?.Player) {
-      createPlayer()
-    } else {
-      script = document.querySelector("script[data-youtube-api]")
-      if (!script) {
-        script = document.createElement("script")
-        script.src = "https://www.youtube.com/iframe_api"
-        script.dataset.youtubeApi = "true"
-        document.body.appendChild(script)
-      }
-      previousReady = window.onYouTubeIframeAPIReady
-      readyCallback = () => {
-        previousReady?.()
-        createPlayer()
-      }
-      window.onYouTubeIframeAPIReady = readyCallback
-      scriptError = () => {
-        window.clearTimeout(timeout)
-        setVideoError(true)
-        setRoomError(
-          "The YouTube player couldn't load. Check your connection and try again.",
-        )
-      }
-      script.addEventListener("error", scriptError, { once: true })
-      timeout = window.setTimeout(() => {
-        setVideoError(true)
-        setRoomError("The YouTube player took too long to load.")
-      }, 12_000)
-    }
-
-    return () => {
-      window.clearTimeout(timeout)
-      if (script && scriptError)
-        script.removeEventListener("error", scriptError)
-      if (readyCallback && window.onYouTubeIframeAPIReady === readyCallback)
-        window.onYouTubeIframeAPIReady = previousReady
-      playerRef.current?.destroy?.()
-      playerRef.current = null
-      isPlayingRef.current = false
-      setPlayerReady(false)
-    }
-  }, [roomId, videoId, publishPlayback])
-
-  useEffect(() => {
-    if (!playerReady || !playback.updatedAt || playback.hostId === userId)
-      return
-    const player = playerRef.current
-    if (!player) return
-    const target =
-      (playback.currentTime ?? 0) +
-      (playback.playing
-        ? Math.max(0, Date.now() - playback.updatedAt) / 1000
-        : 0)
-    const currentTime = player.getCurrentTime?.() ?? 0
-    if (Math.abs(currentTime - target) > 1.5) player.seekTo?.(target, true)
-    isPlayingRef.current = Boolean(playback.playing)
-    setIsPlaying(Boolean(playback.playing))
-    playback.playing ? player.playVideo?.() : player.pauseVideo?.()
-  }, [playback, playerReady, userId])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (isPlayingRef.current) watchedSecondsRef.current += 1
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  }, [movieUrl, roomId, roomTitle, userId])
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
@@ -543,6 +439,21 @@ export default function WatchRoom({
     }
   }
 
+  const endRoom = async () => {
+    if (hostId !== userId || leaving) return
+    setLeaving(true)
+    try {
+      await Promise.all([
+        remove(ref(realtimeDatabase, `rooms/${roomId}`)),
+        remove(ref(realtimeDatabase, `roomDirectory/${roomId}`)),
+      ])
+      onLeave()
+    } catch {
+      setRoomError("The room could not be ended. Check your connection and try again.")
+      setLeaving(false)
+    }
+  }
+
   const leaveRoom = async () => {
     if (leaving) return
     setLeaving(true)
@@ -588,6 +499,16 @@ export default function WatchRoom({
         </button>
         <div className="hidden text-sm font-bold sm:block">Room {roomId}</div>
         <div className="flex items-center gap-2">
+          {hostId === userId && (
+            <button
+              className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
+              disabled={leaving}
+              onClick={() => void endRoom()}
+              type="button"
+            >
+              End room
+            </button>
+          )}
           <button
             className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
             onClick={() => void invite()}
@@ -644,7 +565,7 @@ export default function WatchRoom({
                 ? "Playing together"
                 : "Paused"}
           </div>
-          {roomHostRef.current !== userId && (
+          {hostId !== userId && (
             <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
               <span>Guest mode · playback follows the host</span>
               <button className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10" onClick={syncNow} type="button">Sync now</button>

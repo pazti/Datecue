@@ -89,6 +89,7 @@ export async function recordWatchSession(
   movieUrl: string,
   watchSeconds: number,
   sessionId: string,
+  title = "YouTube video",
 ) {
   const cumulativeSeconds = Math.max(0, Math.floor(watchSeconds))
   if (!Number.isFinite(cumulativeSeconds) || cumulativeSeconds <= 0) return
@@ -113,6 +114,7 @@ export async function recordWatchSession(
         ...history,
         [roomId]: {
           movieUrl,
+          title,
           watchedSeconds: (previous.watchedSeconds ?? 0) + addedSeconds,
           updatedAt: Date.now(),
           sessions: { ...sessions, [sessionId]: cumulativeSeconds },
