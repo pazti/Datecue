@@ -114,8 +114,8 @@ export default function LegalPage({ document, onBack, onNavigate }: Props) {
   const otherDocument = document === "privacy" ? "terms" : "privacy"
 
   return (
-    <main className="film-grain min-h-[100dvh] bg-ivory text-ink">
-      <header className="border-b hairline px-5 py-5 sm:px-8">
+    <main className="film-grain surface-wash min-h-[100dvh] bg-ivory text-ink">
+      <header className="sticky top-0 z-20 border-b hairline bg-ivory/90 px-5 py-4 backdrop-blur-xl sm:px-8">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <button
             className="button-quiet focus-ring flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold"
@@ -130,12 +130,12 @@ export default function LegalPage({ document, onBack, onNavigate }: Props) {
           </nav>
         </div>
       </header>
-      <article className="mx-auto max-w-3xl px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
-        <p className="mono text-xs uppercase tracking-[.16em] text-coral">Datecue / Legal</p>
-        <h1 className="mt-4 text-5xl sm:text-6xl">{page.title}</h1>
+      <article className="page-enter mx-auto max-w-3xl px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
+        <p className="eyebrow text-coral">Datecue / Legal</p>
+        <h1 className="mt-4 text-5xl leading-[.95] sm:text-7xl">{page.title}</h1>
         <p className="mt-4 text-sm text-muted-ink">Effective date: {page.updated}</p>
         <p className="mt-8 max-w-2xl text-lg leading-relaxed">{page.intro}</p>
-        <div className="mt-12 space-y-10 border-t hairline pt-8">
+        <div className="mt-12 space-y-12 border-t hairline pt-8 sm:mt-16 sm:space-y-14">
           {page.sections.map((section) => (
             <section key={section.title}>
               <h2 className="text-2xl">{section.title}</h2>

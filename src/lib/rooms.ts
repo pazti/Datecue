@@ -16,6 +16,12 @@ export interface RoomStats {
   reactionsCount: number
 }
 
+export interface UserProfile {
+  displayName: string
+  bio?: string
+  updatedAt: number
+}
+
 export async function createRoom(
   roomId: string,
   hostId: string,
@@ -52,9 +58,19 @@ export async function joinRoom(roomId: string, userId: string) {
   return room
 }
 
-export async function saveUserProfile(userId: string, displayName: string) {
+export async function saveUserProfile(
+  userId: string,
+  displayName: string,
+  bio = "",
+) {
+  const normalizedName = displayName.trim().slice(0, 40)
+  const normalizedBio = bio.trim().slice(0, 160)
+  if (normalizedName.length < 2) {
+    throw new Error("DISPLAY_NAME_TOO_SHORT")
+  }
   return update(ref(realtimeDatabase, `users/${userId}/profile`), {
-    displayName: displayName.trim().slice(0, 40),
+    displayName: normalizedName,
+    bio: normalizedBio,
     updatedAt: Date.now(),
   })
 }
@@ -69,7 +85,7 @@ export async function recordLegalAcceptance(userId: string, version: string) {
 
 export async function getUserProfile(userId: string) {
   const snap = await get(ref(realtimeDatabase, `users/${userId}/profile`))
-  return snap.val() as { displayName?: string } | null
+  return snap.val() as Partial<UserProfile> | null
 }
 
 export async function leaveRoom(roomId: string, userId: string) {

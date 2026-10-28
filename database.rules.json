@@ -7,7 +7,7 @@
         ".read": "auth != null && auth.token.email_verified == true && auth.uid == $uid",
         ".write": "auth != null && auth.token.email_verified == true && auth.uid == $uid",
         "profile": {
-          ".validate": "newData.hasChildren(['displayName', 'updatedAt']) && newData.child('displayName').isString() && newData.child('displayName').val().length >= 2 && newData.child('displayName').val().length <= 40 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000"
+        ".validate": "newData.hasChildren(['displayName', 'updatedAt']) && newData.child('displayName').isString() && newData.child('displayName').val().length >= 2 && newData.child('displayName').val().length <= 40 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && (!newData.child('bio').exists() || (newData.child('bio').isString() && newData.child('bio').val().length <= 160))"
         },
         "legalAcceptance": {
           ".validate": "newData.hasChildren(['termsVersion', 'privacyVersion', 'acceptedAt']) && newData.child('termsVersion').val() == '2026-10-26' && newData.child('privacyVersion').val() == '2026-10-26' && newData.child('acceptedAt').isNumber() && newData.child('acceptedAt').val() <= now + 60000"
@@ -86,7 +86,7 @@
           ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           "$uid": {
             ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && (!newData.exists() || data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid)",
-            ".validate": "newData.hasChildren(['online', 'updatedAt']) && newData.child('online').isBoolean() && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length <= 40))"
+            ".validate": "newData.hasChildren(['online', 'updatedAt']) && newData.child('online').isBoolean() && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length <= 40)) && (!newData.child('bio').exists() || (newData.child('bio').isString() && newData.child('bio').val().length <= 160))"
           }
         },
         "playback": {

@@ -146,7 +146,7 @@ export default function LandingPage({
   const raised = darkMode ? "bg-night-card" : "bg-paper"
 
   return (
-    <div className={`film-grain min-h-[100dvh] overflow-x-hidden ${surface}`}>
+    <div className={`film-grain surface-wash min-h-[100dvh] overflow-x-hidden ${surface}`}>
       <nav
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12"
         aria-label="Primary navigation"
@@ -180,7 +180,7 @@ export default function LandingPage({
       </nav>
 
       <main>
-        <section className="relative isolate mx-auto grid max-w-7xl items-center gap-14 overflow-hidden rounded-[44px] px-5 pb-24 pt-12 sm:px-8 md:pb-32 md:pt-20 lg:grid-cols-[1fr_420px] lg:gap-24 lg:px-12">
+        <section className="page-enter relative isolate mx-auto grid max-w-7xl items-center gap-14 overflow-hidden rounded-[36px] px-4 pb-20 pt-10 sm:rounded-[44px] sm:px-8 md:pb-32 md:pt-20 lg:grid-cols-[1fr_420px] lg:gap-24 lg:px-12">
           <LiquidHero />
           <div className="pointer-events-none absolute inset-0 -z-0 rounded-[44px] bg-gradient-to-br from-navy/90 via-navy/55 to-coral/25" />
           <LiquidGlass
@@ -191,7 +191,7 @@ export default function LandingPage({
             }
           >
             <div>
-              <div className="mb-6 flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-ivory/70">
+              <div className="eyebrow mb-6 flex items-center gap-2 font-bold text-ivory/70">
                 <span className="h-px w-8 bg-coral" /> a room for two
               </div>
               <h1 className="max-w-3xl text-[clamp(3.6rem,8vw,7.4rem)] leading-[.9]">

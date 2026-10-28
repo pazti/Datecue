@@ -179,8 +179,8 @@ export default function AuthPage({
   }
 
   return (
-    <div className={`film-grain min-h-[100dvh] ${surface}`}>
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
+    <div className={`film-grain surface-wash min-h-[100dvh] ${surface}`}>
+      <header className="mx-auto flex max-w-7xl items-center justify-between border-b hairline px-5 py-4 sm:px-8 lg:px-12">
         <button
           aria-label="Back to home"
           className="button-quiet focus-ring flex items-center gap-2 rounded-full border hairline px-4 py-2 text-sm font-bold"
@@ -198,8 +198,8 @@ export default function AuthPage({
           <Icon name={darkMode ? "sun" : "moon"} size={17} />
         </button>
       </header>
-      <main className="mx-auto flex max-w-md flex-col px-5 pb-20 pt-16 sm:px-8">
-        <p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>
+      <main className="page-enter mx-auto flex max-w-md flex-col px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
+        <p className={`eyebrow ${muted}`}>
           your datecue account
         </p>
         <h1 className="mt-5 text-5xl leading-[.95] sm:text-6xl">
@@ -214,13 +214,14 @@ export default function AuthPage({
           className="soft-card mt-9 rounded-[28px] p-6 sm:p-9"
           onSubmit={submit}
         >
-          <div className="mb-7 flex gap-1 border-b hairline">
+          <div className="mb-7 flex gap-1 border-b hairline" role="tablist" aria-label="Account access">
             {(["login", "signup"] as const).map((item) => (
               <button
                 className={`focus-ring relative -mb-px px-4 pb-4 pt-1 text-sm font-bold capitalize ${
                   mode === item ? "text-coral" : muted
                 }`}
                 aria-pressed={mode === item}
+                role="tab"
                 key={item}
                 onClick={() => {
                   setMode(item)
@@ -340,7 +341,7 @@ export default function AuthPage({
           {error && (
             <p
               role="alert"
-              className="mt-4 rounded-xl bg-coral/10 px-3 py-2 text-sm text-coral"
+              className="mt-4 rounded-xl border border-coral/20 bg-coral/10 px-3 py-3 text-sm leading-relaxed text-coral"
             >
               {error}
             </p>

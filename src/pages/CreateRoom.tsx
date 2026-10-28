@@ -189,8 +189,8 @@ export default function CreateRoom({
     }
   }
   return (
-    <div className={`film-grain min-h-[100dvh] ${surface}`}>
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5">
+    <div className={`film-grain surface-wash min-h-[100dvh] ${surface}`}>
+      <header className="mx-auto flex max-w-7xl items-center justify-between border-b hairline px-5 py-4 sm:px-8">
         <button
           className="button-quiet focus-ring rounded-full border px-4 py-2 text-sm font-bold"
           onClick={onBack}
@@ -206,24 +206,27 @@ export default function CreateRoom({
           <Icon name={darkMode ? "sun" : "moon"} size={17} />
         </button>
       </header>
-      <main className="mx-auto max-w-xl px-5 pb-20 pt-12">
-        <p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>
+      <main className="page-enter mx-auto max-w-xl px-5 pb-20 pt-10 sm:px-8 sm:pt-14">
+        <p className={`eyebrow ${muted}`}>
           a room for two / setup
         </p>
-        <h1 className="mt-5 text-6xl leading-[.9]">Make some room.</h1>
+        <h1 className="mt-5 text-[clamp(3.4rem,9vw,5.4rem)] leading-[.9]">Make some room.</h1>
+        <p className={`mt-5 max-w-md text-base leading-relaxed ${muted}`}>
+          Pick a video or bring a room code. The good part starts when you’re both here.
+        </p>
         <form
-          className="soft-card mt-10 rounded-[28px] p-6 sm:p-9"
+          className="soft-card mt-8 rounded-[26px] p-5 sm:p-9"
           onSubmit={(event) => void submit(event)}
         >
           <div
-            className="flex gap-5 border-b hairline"
+            className="flex gap-6 border-b hairline"
             role="group"
             aria-label="Choose whether to create or join a room"
           >
             {(["create", "join"] as const).map((item) => (
               <button
                 aria-pressed={tab === item}
-                className={`focus-ring pb-4 text-sm font-bold ${
+                className={`focus-ring relative pb-4 text-sm font-bold ${
                   tab === item ? "text-coral" : muted
                 }`}
                 type="button"
@@ -234,6 +237,7 @@ export default function CreateRoom({
                 key={item}
               >
                 {item === "create" ? "Create a room" : "Join a room"}
+                {tab === item && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-coral" aria-hidden="true" />}
               </button>
             ))}
           </div>
@@ -297,7 +301,7 @@ export default function CreateRoom({
             </>
           )}
           {error && (
-            <p className="mt-4 text-sm text-coral" role="alert">
+            <p className="mt-4 rounded-xl border border-coral/20 bg-coral/10 px-3 py-3 text-sm leading-relaxed text-coral" role="alert">
               {error}
             </p>
           )}

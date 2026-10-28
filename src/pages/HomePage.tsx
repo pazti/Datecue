@@ -44,6 +44,9 @@ export default function HomePage({
   onLegal,
 }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [roomCount, setRoomCount] = useState(0)
   const [totalSeconds, setTotalSeconds] = useState(0)
   const [notifications, setNotifications] =
@@ -69,13 +72,18 @@ export default function HomePage({
           setHistory(allHistory.slice(0, 8))
           setNotifications(value.notifications ?? {})
           setError("")
+          setLoading(false)
+          setLoadError(false)
         },
-        () =>
+        () => {
           setError(
             "Your home data couldn't load. Check your connection and try again.",
-          ),
+          )
+          setLoading(false)
+          setLoadError(true)
+        },
       ),
-    [userId],
+    [loadAttempt, userId],
   )
 
   const unread = Object.values(notifications).filter(
@@ -134,8 +142,8 @@ export default function HomePage({
   }
 
   return (
-    <div className={`film-grain min-h-[100dvh] ${surface}`}>
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5">
+    <div className={`film-grain surface-wash min-h-[100dvh] ${surface}`}>
+      <header className="mx-auto flex max-w-6xl items-center justify-between border-b hairline px-5 py-4 sm:px-8">
         <Logo dark={darkMode} />
         <div className="flex items-center gap-2">
           <button
@@ -158,10 +166,10 @@ export default function HomePage({
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-5 pb-16 pt-8">
+      <main className="page-enter mx-auto max-w-6xl px-5 pb-16 pt-9 sm:px-8 sm:pt-12">
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
-            <p className={`mono text-xs uppercase tracking-[.2em] ${muted}`}>
+            <p className={`eyebrow ${muted}`}>
               your datecue home
             </p>
             <h1 className="mt-3 text-4xl sm:text-6xl">
@@ -187,40 +195,59 @@ export default function HomePage({
         </div>
 
         {error && (
-          <p
-            className="mt-6 rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral"
-            role="alert"
-          >
-            {error}
-          </p>
+          <div className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-coral/20 bg-coral/10 px-4 py-3 text-sm text-coral sm:flex-row sm:items-center" role="alert">
+            <p>{error}</p>
+            {loadError && (
+              <button
+                className="focus-ring shrink-0 rounded-full border border-coral/30 px-3 py-2 text-xs font-bold"
+                onClick={() => {
+                  setLoading(true)
+                  setLoadAttempt((attempt) => attempt + 1)
+                }}
+                type="button"
+              >
+                Try again
+              </button>
+            )}
+          </div>
         )}
 
         <section
-          className="mt-8 grid gap-3 sm:grid-cols-3"
+          className="mt-9 grid gap-3 md:grid-cols-[1.15fr_.85fr]"
           aria-label="Your activity"
         >
-          <div className="soft-card rounded-2xl p-5">
-            <p className={`text-xs uppercase ${muted}`}>Total watch time</p>
-            <p className="mt-2 text-3xl font-bold">
+          <div className="soft-card relative flex min-h-36 flex-col justify-between overflow-hidden rounded-[24px] p-6 sm:p-7">
+            <div aria-hidden="true" className="absolute -right-5 -top-12 h-44 w-44 rounded-full border border-coral/20" />
+            <p className={`eyebrow relative ${muted}`}>Time spent together</p>
+            <p className="display-serif relative mt-4 text-5xl leading-none sm:text-6xl">
               {formatDuration(totalSeconds)}
             </p>
+            <p className={`relative mt-3 text-sm ${muted}`}>Your shared screen time, saved for you.</p>
           </div>
-          <div className="soft-card rounded-2xl p-5">
-            <p className={`text-xs uppercase ${muted}`}>Rooms watched</p>
-            <p className="mt-2 text-3xl font-bold">{roomCount}</p>
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
+            <div className="soft-card flex items-center justify-between gap-4 rounded-[22px] px-5 py-4">
+              <div>
+                <p className={`eyebrow ${muted}`}>Watch nights</p>
+                <p className="mt-1 text-2xl font-semibold">{roomCount}</p>
+              </div>
+              <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-moss/15 text-moss"><Icon name="film" size={19} /></span>
+            </div>
+            <button
+              aria-expanded={showNotifications}
+              className="soft-card focus-ring flex items-center justify-between gap-4 rounded-[22px] px-5 py-4 text-left transition hover:-translate-y-0.5"
+              onClick={() => setShowNotifications((open) => !open)}
+              type="button"
+            >
+              <span>
+                <span className={`eyebrow block ${muted}`}>Notifications</span>
+                <span className="mt-1 block text-2xl font-semibold">{unread}</span>
+                <span className={`mt-1 block text-xs ${muted}`}>
+                  {showNotifications ? "Close notifications" : "View updates"}
+                </span>
+              </span>
+              <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-coral/12 text-coral"><Icon name="message" size={19} /></span>
+            </button>
           </div>
-          <button
-            aria-expanded={showNotifications}
-            className="soft-card focus-ring rounded-2xl p-5 text-left transition hover:-translate-y-0.5"
-            onClick={() => setShowNotifications((open) => !open)}
-            type="button"
-          >
-            <span className={`text-xs uppercase ${muted}`}>Notifications</span>
-            <span className="mt-2 block text-3xl font-bold">{unread}</span>
-            <span className={`mt-1 block text-sm ${muted}`}>
-              {showNotifications ? "Close notifications" : "View notifications"}
-            </span>
-          </button>
         </section>
 
         {showNotifications && (
@@ -283,9 +310,9 @@ export default function HomePage({
           </section>
         )}
 
-        <section className="mt-10">
+        <section className="mt-12">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-3xl">Recent rooms</h2>
+            <h2 className="text-3xl sm:text-4xl">A few nights to revisit</h2>
             <span className={`text-sm ${muted}`}>
               {roomCount
                 ? `${roomCount} saved`
@@ -293,10 +320,23 @@ export default function HomePage({
             </span>
           </div>
           <div className="mt-4 grid gap-3">
-            {history.length === 0 ? (
-              <div className="soft-card rounded-2xl p-7">
-                <p className="font-semibold">No watch nights yet.</p>
-                <p className={`mt-2 text-sm ${muted}`}>
+            {loading ? (
+              <div className="space-y-3" role="status" aria-label="Loading recent rooms">
+                {[0, 1, 2].map((item) => (
+                  <div className="soft-card flex items-center gap-4 rounded-[22px] p-4" key={item}>
+                    <span className="loading-shimmer h-16 w-28 shrink-0 rounded-[14px]" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 space-y-2">
+                      <span className="loading-shimmer block h-4 w-2/3 rounded-full" />
+                      <span className="loading-shimmer block h-3 w-1/3 rounded-full" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : history.length === 0 ? (
+              <div className="soft-card relative overflow-hidden rounded-[26px] p-7 sm:p-9">
+                <div aria-hidden="true" className="absolute -right-8 -top-10 h-48 w-48 rounded-full border border-moss/20" />
+                <p className="display-serif relative text-3xl">Your story starts with a play button.</p>
+                <p className={`relative mt-2 max-w-md text-sm leading-relaxed ${muted}`}>
                   Create a room and invite someone to start your history.
                 </p>
                 <button
@@ -312,13 +352,13 @@ export default function HomePage({
                 <button
                   key={item.roomId}
                   onClick={() => void openHistoryRoom(item)}
-                  className="soft-card focus-ring flex w-full items-center justify-between gap-4 rounded-2xl p-4 text-left transition hover:-translate-y-0.5"
+                  className="soft-card focus-ring group flex w-full items-center justify-between gap-4 rounded-[22px] p-3 text-left transition hover:-translate-y-0.5 sm:p-4"
                   type="button"
                 >
                   {item.thumbnailUrl && (
                     <img
                       alt=""
-                      className="h-14 w-24 shrink-0 rounded-lg object-cover"
+                      className="h-16 w-28 shrink-0 rounded-[14px] object-cover sm:h-[76px] sm:w-32"
                       loading="lazy"
                       src={item.thumbnailUrl}
                     />
@@ -331,7 +371,7 @@ export default function HomePage({
                       {formatDuration(item.watchedSeconds ?? 0)} watched
                     </span>
                   </span>
-                  <Icon name="arrow-right" size={18} />
+                   <Icon className="shrink-0 transition-transform group-hover:translate-x-1" name="arrow-right" size={18} />
                 </button>
               ))
             )}

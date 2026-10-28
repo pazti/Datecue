@@ -198,8 +198,13 @@ export default function App() {
 
   if (!authReady)
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f2ea] text-sm font-semibold text-[#17252b]">
-        Loading Datecue…
+      <div className="surface-wash flex min-h-[100dvh] flex-col items-center justify-center gap-5 px-6 text-center text-ink" role="status" aria-live="polite">
+        <span className="liquid-logo-mark liquid-logo-mark-lg" aria-hidden="true"><span /></span>
+        <div>
+          <p className="display-serif text-3xl">A moment, together.</p>
+          <p className="mt-2 text-sm text-muted-ink">Getting your Datecue space ready…</p>
+        </div>
+        <span className="loading-shimmer h-1 w-36 rounded-full" aria-hidden="true" />
       </div>
     )
 

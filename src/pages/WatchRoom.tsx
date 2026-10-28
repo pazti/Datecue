@@ -58,6 +58,15 @@ interface Playback {
 }
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "👋"]
+const REACTION_LABELS: Record<string, string> = {
+  "👍": "Like",
+  "❤️": "Love",
+  "😂": "Laugh",
+  "😮": "Surprised",
+  "😢": "Moved",
+  "🙏": "Thanks",
+  "👋": "Wave",
+}
 const MAX_VISIBLE_MESSAGES = 100
 const MAX_VISIBLE_REACTIONS = 30
 const REACTION_LIFETIME_MS = 15_000
@@ -86,6 +95,7 @@ export default function WatchRoom({
   const [presence, setPresence] = useState<Record<string, {
     online?: boolean
     displayName?: string
+    bio?: string
   }>>({})
   const presenceRef = useRef(presence)
   presenceRef.current = presence
@@ -112,6 +122,12 @@ export default function WatchRoom({
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
   const [nameDraft, setNameDraft] = useState("")
   const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [profilePreview, setProfilePreview] = useState<{
+    uid: string
+    name: string
+    online: boolean
+    bio?: string
+  } | null>(null)
   const [hostLeft, setHostLeft] = useState(false)
   const [roomEnded, setRoomEnded] = useState(false)
   const [sending, setSending] = useState(false)
@@ -577,6 +593,15 @@ export default function WatchRoom({
     return () => window.removeEventListener("keydown", closeOnEscape)
   }, [inviteUrl])
 
+  useEffect(() => {
+    if (!profilePreview) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProfilePreview(null)
+    }
+    window.addEventListener("keydown", closeOnEscape)
+    return () => window.removeEventListener("keydown", closeOnEscape)
+  }, [profilePreview])
+
   const syncNow = () => {
     const player = playerRef.current
     if (!player || !playback.updatedAt) return
@@ -818,12 +843,12 @@ export default function WatchRoom({
   }
 
   const latestReactions = useMemo(() => reactions.slice(-12), [reactions])
-  const initials = (name: string) => name.trim().split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "G"
+  const initials = (name: string) => name.trim().split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "G"
   const avatarColor = (uid: string) => ["bg-coral", "bg-moss", "bg-navy", "bg-[#9b6b43]"][uid.charCodeAt(0) % 4]
 
   return (
     <div className={`min-h-[100dvh] ${surface}`}>
-      <header className="flex min-h-16 items-center justify-between gap-2 border-b hairline px-3 py-3 sm:px-6">
+      <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b hairline bg-ivory/90 px-3 py-3 backdrop-blur-xl dark:bg-night/90 sm:px-6">
         <button
           className="button-quiet focus-ring flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold"
           disabled={leaving}
@@ -866,7 +891,7 @@ export default function WatchRoom({
       </header>
 
       <main className="flex min-h-[calc(100dvh-64px)] flex-col lg:flex-row">
-        <section className="relative aspect-video w-full shrink-0 bg-[#10181d] lg:aspect-auto lg:min-h-[calc(100dvh-4rem)] lg:flex-1">
+        <section className="relative aspect-video w-full shrink-0 bg-[#172327] lg:aspect-auto lg:min-h-[calc(100dvh-4rem)] lg:flex-1">
           <div className="absolute inset-0">
             {videoId && !videoError ? (
               <div
@@ -951,15 +976,15 @@ export default function WatchRoom({
           <div className="absolute bottom-4 right-4 z-10">
             {showReactions ? (
               <div className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
-                {REACTIONS.map((emoji) => (
+                {REACTIONS.map((reaction) => (
                   <button
-                    key={emoji}
-                    aria-label={`React ${emoji}`}
-                    onClick={() => void sendReaction(emoji)}
-                    className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[22px] transition hover:bg-white/10"
+                    key={reaction}
+                    aria-label={`React: ${REACTION_LABELS[reaction]}`}
+                    onClick={() => void sendReaction(reaction)}
+                    className="focus-ring shrink-0 rounded-full px-3 py-2 text-xs font-semibold text-white/90 transition hover:bg-white/10"
                     type="button"
                   >
-                    {emoji}
+                    {REACTION_LABELS[reaction]}
                   </button>
                 ))}
                 <button
@@ -988,7 +1013,7 @@ export default function WatchRoom({
               className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 text-3xl"
               aria-hidden="true"
             >
-              {reaction.emoji}
+              {REACTION_LABELS[reaction.emoji] || "Reaction"}
             </span>
           ))}
           {roomEnded && (
@@ -1011,9 +1036,21 @@ export default function WatchRoom({
             </p>
             <div className="mt-3 flex items-center gap-2">
               {Object.entries(presence).slice(0, 2).map(([uid, person]) => (
-                <span key={uid} className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold text-ivory ${avatarColor(uid)}`} title={person.displayName || "Guest"}>
+                <button
+                  key={uid}
+                  className={`focus-ring flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold text-ivory ring-2 ring-paper transition hover:scale-105 ${avatarColor(uid)}`}
+                  title={`View ${person.displayName || "Guest"}'s room profile`}
+                  aria-label={`View ${person.displayName || "Guest"}'s room profile`}
+                  onClick={() => setProfilePreview({
+                    uid,
+                    name: person.displayName || "Guest",
+                    online: Boolean(person.online),
+                    bio: person.bio,
+                  })}
+                  type="button"
+                >
                   {initials(person.displayName || "Guest")}
-                </span>
+                </button>
               ))}
               <span className="text-xs text-muted-ink">
                 {Object.values(presence).map((person) => person.displayName || "Guest").join(" · ")}
@@ -1162,6 +1199,53 @@ export default function WatchRoom({
             <input className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3" autoFocus maxLength={40} minLength={2} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Display name" />
             {nameError && <p className="mt-2 text-sm text-coral" role="alert">{nameError}</p>}
             <button className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold" disabled={nameDraft.trim().length < 2} onClick={() => void saveName()} type="button">Save name</button>
+          </section>
+        </div>
+      )}
+
+      {profilePreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-navy/50 p-4 backdrop-blur-sm sm:items-center"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setProfilePreview(null)
+          }}
+        >
+          <section
+            aria-labelledby="participant-profile-title"
+            aria-modal="true"
+            className="soft-card page-enter w-full max-w-sm rounded-[26px] p-6 shadow-2xl"
+            role="dialog"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-ivory ${avatarColor(profilePreview.uid)}`} aria-hidden="true">
+                  {initials(profilePreview.name)}
+                </span>
+                <div>
+                  <p className="eyebrow text-coral">Room profile</p>
+                  <h2 className="mt-1 text-2xl" id="participant-profile-title">{profilePreview.name}</h2>
+                </div>
+              </div>
+              <button
+                aria-label="Close participant profile"
+                className="button-quiet focus-ring flex h-9 w-9 items-center justify-center rounded-full border"
+                onClick={() => setProfilePreview(null)}
+                type="button"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+            <p className="mt-5 flex items-center gap-2 text-sm text-muted-ink">
+              <span className={`h-2 w-2 rounded-full ${profilePreview.online ? "bg-moss" : "bg-ochre"}`} />
+              {profilePreview.online ? "Here in the room" : "Away from the room"}
+            </p>
+            {profilePreview.bio && (
+              <p className="mt-4 text-sm leading-relaxed">{profilePreview.bio}</p>
+            )}
+            <p className="mt-4 border-t hairline pt-4 text-sm leading-relaxed text-muted-ink">
+              Only details shared in this room appear here. Personal watch history and private account details stay private.
+            </p>
           </section>
         </div>
       )}
