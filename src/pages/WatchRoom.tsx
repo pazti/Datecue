@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  get,
   limitToLast,
   onDisconnect,
   onValue,
@@ -20,7 +21,11 @@ import {
   youtubeIdFromUrl,
 } from "../lib/firebase"
 import { createNotification } from "../lib/notifications"
-import { recordWatchSession } from "../lib/rooms"
+import {
+  recordWatchSession,
+  saveWatchRecap,
+  type WatchRecap,
+} from "../lib/rooms"
 import { canonicalYoutubeUrl } from "../lib/youtube"
 import {
   isValidMessage,
@@ -35,6 +40,7 @@ interface Props {
   onToggleDark: () => void
   roomId: string
   movieUrl: string
+  resumePosition?: number
   userId: string
 }
 
@@ -53,6 +59,26 @@ interface Reaction {
   uid: string
   emoji: string
   createdAt: number
+}
+
+interface QueueItem {
+  id: string
+  url: string
+  title: string
+  addedBy: string
+  createdAt: number
+}
+
+interface RoomSettings {
+  chatEnabled: boolean
+  reactionsEnabled: boolean
+  guestsCanQueue: boolean
+}
+
+interface AccessibilityPreferences {
+  reduceMotion: boolean
+  largerChatText: boolean
+  keyboardShortcuts: boolean
 }
 
 interface Playback {
@@ -93,10 +119,26 @@ export default function WatchRoom({
   onToggleDark,
   roomId,
   movieUrl,
+  resumePosition,
   userId,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
   const [reactions, setReactions] = useState<Reaction[]>([])
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([])
+  const [settings, setSettings] = useState<RoomSettings>({
+    chatEnabled: true,
+    reactionsEnabled: true,
+    guestsCanQueue: true,
+  })
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [settingsPresent, setSettingsPresent] = useState(false)
+  const [accessibility, setAccessibility] = useState<AccessibilityPreferences>({
+    reduceMotion: false,
+    largerChatText: false,
+    keyboardShortcuts: false,
+  })
   const [presence, setPresence] = useState<Record<string, {
     online?: boolean
     displayName?: string
@@ -110,12 +152,20 @@ export default function WatchRoom({
   const [roomTitle, setRoomTitle] = useState("YouTube video")
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoTime, setVideoTime] = useState(0)
+  const [resumeSuggestion, setResumeSuggestion] = useState<number | null>(
+    resumePosition && resumePosition > 15 ? resumePosition : null,
+  )
   const [videoDuration, setVideoDuration] = useState(0)
   const [playerReady, setPlayerReady] = useState(false)
   const [text, setText] = useState("")
   const [videoDraft, setVideoDraft] = useState("")
   const [changingVideo, setChangingVideo] = useState(false)
+  const [queueDraft, setQueueDraft] = useState("")
+  const [addingToQueue, setAddingToQueue] = useState(false)
+  const [playingQueueId, setPlayingQueueId] = useState("")
   const [showReactions, setShowReactions] = useState(false)
+  const [showRoomSettings, setShowRoomSettings] = useState(false)
+  const [savingRoomSettings, setSavingRoomSettings] = useState(false)
   const [videoError, setVideoError] = useState("")
   const [copied, setCopied] = useState(false)
   const [roomCodeCopied, setRoomCodeCopied] = useState(false)
@@ -164,6 +214,11 @@ export default function WatchRoom({
   const watchedSecondsRef = useRef(0)
   const savedWatchSecondsRef = useRef(0)
   const sessionIdRef = useRef("")
+  const roomRecapSavedRef = useRef(false)
+  const roomResumePromptHandledRef = useRef(false)
+  const roomVideosRef = useRef<WatchRecap["videos"]>([
+    { title: "YouTube video", movieUrl, watchedSeconds: 0 },
+  ])
   if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID()
   const messageEndRef = useRef<HTMLDivElement>(null)
   const videoId = youtubeIdFromUrl(roomMovieUrl)
@@ -171,6 +226,73 @@ export default function WatchRoom({
     (item) => item.online,
   ).length
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
+
+  const updateRecapVideo = (url: string, title: string, watchedSeconds = 0) => {
+    const existing = roomVideosRef.current.find(
+      (video) => video.movieUrl === url,
+    )
+    if (existing) {
+      existing.title = title || existing.title
+      existing.watchedSeconds += Math.max(0, Math.floor(watchedSeconds))
+    } else {
+      roomVideosRef.current.push({
+        movieUrl: url,
+        title: title || "YouTube video",
+        watchedSeconds: Math.max(0, Math.floor(watchedSeconds)),
+      })
+    }
+  }
+
+  const createRoomRecap = (): WatchRecap => {
+    const videos = roomVideosRef.current.map((video) => ({ ...video }))
+    const currentVideo = videos.find(
+      (video) => video.movieUrl === activeVideoUrlRef.current,
+    )
+    if (currentVideo)
+      currentVideo.watchedSeconds += Math.max(
+        0,
+        Math.floor(watchedSecondsRef.current),
+      )
+    else
+      videos.push({
+        movieUrl: activeVideoUrlRef.current,
+        title: activeVideoTitleRef.current,
+        watchedSeconds: Math.max(0, Math.floor(watchedSecondsRef.current)),
+      })
+
+    const participantNames = Array.from(
+      new Set(
+        [
+          ...Object.values(presenceRef.current).map((participant) =>
+            participant.displayName?.trim(),
+          ),
+          displayNameRef.current,
+        ].filter((name): name is string => Boolean(name)),
+      ),
+    )
+    const highlights = messagesRef.current
+      .filter(
+        (message): message is Message & { videoTime: number } =>
+          typeof message.videoTime === "number",
+      )
+      .slice(-5)
+      .map((message) => ({
+        text: message.text,
+        senderName: message.senderName || "Guest",
+        videoTime: message.videoTime,
+        createdAt: message.createdAt,
+      }))
+    return {
+      endedAt: Date.now(),
+      durationSeconds: videos.reduce(
+        (total, video) => total + video.watchedSeconds,
+        0,
+      ),
+      participantNames,
+      videos,
+      highlights,
+    }
+  }
 
   useEffect(() => {
     if (!videoId) return
@@ -307,6 +429,45 @@ export default function WatchRoom({
   }, [userId])
 
   useEffect(() => {
+    if (!settings.reactionsEnabled) setShowReactions(false)
+  }, [settings.reactionsEnabled])
+
+  useEffect(() => {
+    if (!accessibility.keyboardShortcuts) return
+    const handleShortcut = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))
+      )
+        return
+      if (event.key.toLowerCase() === "r" && settings.reactionsEnabled) {
+        setShowReactions(true)
+        return
+      }
+      if (hostId !== userId || !playerRef.current) return
+      if (event.code === "Space") {
+        event.preventDefault()
+        if (isPlayingRef.current) playerRef.current.pauseVideo?.()
+        else playerRef.current.playVideo?.()
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault()
+        const currentTime = playerRef.current.getCurrentTime?.() ?? 0
+        const delta = event.key === "ArrowLeft" ? -10 : 10
+        playerRef.current.seekTo?.(Math.max(0, currentTime + delta), true)
+      }
+    }
+    window.addEventListener("keydown", handleShortcut)
+    return () => window.removeEventListener("keydown", handleShortcut)
+  }, [
+    accessibility.keyboardShortcuts,
+    hostId,
+    settings.reactionsEnabled,
+    userId,
+  ])
+
+  useEffect(() => {
     void trackAnalyticsEvent("watch_session_start")
   }, [roomId])
 
@@ -438,6 +599,17 @@ export default function WatchRoom({
             setRoomError(
               "This room has ended or expired. You can leave and return home.",
             )
+            if (!roomRecapSavedRef.current) {
+              roomRecapSavedRef.current = true
+              void saveWatchRecap(userId, roomId, createRoomRecap()).catch(
+                () => {
+                  roomRecapSavedRef.current = false
+                  setRoomError(
+                    "The room ended, but its recap couldn't be saved to your profile.",
+                  )
+                },
+              )
+            }
             return
           }
           setRoomEnded(false)
@@ -449,6 +621,11 @@ export default function WatchRoom({
           setRoomTitle(title)
           if (value.movieUrl) {
             if (value.movieUrl !== activeVideoUrlRef.current) {
+              updateRecapVideo(
+                activeVideoUrlRef.current,
+                activeVideoTitleRef.current,
+                watchedSecondsRef.current,
+              )
               void recordWatchSession(
                 userId,
                 roomId,
@@ -458,6 +635,8 @@ export default function WatchRoom({
                 activeVideoTitleRef.current,
               ).catch(() => setRoomError(WATCH_SAVE_ERROR))
               activeVideoUrlRef.current = value.movieUrl
+              roomResumePromptHandledRef.current = true
+              setResumeSuggestion(null)
               watchedSecondsRef.current = 0
               savedWatchSecondsRef.current = 0
               sessionIdRef.current = crypto.randomUUID()
@@ -470,6 +649,7 @@ export default function WatchRoom({
               setVideoError("")
             }
             activeVideoTitleRef.current = title
+            updateRecapVideo(value.movieUrl, title)
             setRoomMovieUrl(value.movieUrl)
           }
         },
@@ -502,6 +682,49 @@ export default function WatchRoom({
       onValue(
         ref(realtimeDatabase, `rooms/${roomId}/typing`),
         (snap) => setTypingUsers(snap.val() ?? {}),
+        fail,
+      ),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/queue`),
+        (snap) => {
+          setQueueItems(
+            Object.entries(snap.val() ?? {})
+              .map(([id, value]) => ({
+                id,
+                ...value as Omit<QueueItem, "id">,
+              }))
+              .sort(
+                (left, right) =>
+                  left.createdAt - right.createdAt ||
+                  left.id.localeCompare(right.id),
+              ),
+          )
+        },
+        fail,
+      ),
+      onValue(
+        ref(realtimeDatabase, `rooms/${roomId}/settings`),
+        (snap) => {
+          setSettingsPresent(snap.exists())
+          setSettingsLoaded(true)
+          setSettings({
+            chatEnabled: snap.child("chatEnabled").val() !== false,
+            reactionsEnabled: snap.child("reactionsEnabled").val() !== false,
+            guestsCanQueue: snap.child("guestsCanQueue").val() !== false,
+          })
+        },
+        fail,
+      ),
+      onValue(
+        ref(realtimeDatabase, `users/${userId}/preferences/accessibility`),
+        (snap) => {
+          const value = snap.val() ?? {}
+          setAccessibility({
+            reduceMotion: value.reduceMotion === true,
+            largerChatText: value.largerChatText === true,
+            keyboardShortcuts: value.keyboardShortcuts === true,
+          })
+        },
         fail,
       ),
       onValue(
@@ -543,6 +766,63 @@ export default function WatchRoom({
       ).catch(() => setRoomError(WATCH_SAVE_ERROR))
     }
   }, [movieUrl, roomId, userId])
+
+  useEffect(() => {
+    if (hostId !== userId || !settingsLoaded || settingsPresent) return
+    void set(ref(realtimeDatabase, `rooms/${roomId}/settings`), {
+      chatEnabled: true,
+      reactionsEnabled: true,
+      guestsCanQueue: true,
+    }).catch(() =>
+      setRoomError(
+        "Room settings couldn't be initialized. Deploy the latest database rules and try again.",
+      ),
+    )
+  }, [hostId, roomId, settingsLoaded, settingsPresent, userId])
+
+  useEffect(() => {
+    let cancelled = false
+    if (
+      resumePosition &&
+      resumePosition > 15 &&
+      !roomResumePromptHandledRef.current
+    ) {
+      setResumeSuggestion(resumePosition)
+      roomResumePromptHandledRef.current = true
+      return
+    }
+    void get(ref(realtimeDatabase, `users/${userId}/roomCheckpoints/${roomId}`))
+      .then((snap) => {
+        const checkpoint = snap.val()
+        if (
+          !cancelled &&
+          !roomResumePromptHandledRef.current &&
+          checkpoint?.movieUrl === roomMovieUrl &&
+          Number.isFinite(checkpoint.position) &&
+          checkpoint.position > 15
+        ) {
+          setResumeSuggestion(checkpoint.position)
+          roomResumePromptHandledRef.current = true
+        }
+      })
+      .catch(() => {
+        if (!cancelled)
+          setRoomError("Your saved room position couldn't be loaded.")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [roomId, roomMovieUrl, resumePosition, userId])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!playerReady || !playerRef.current) return
+      void saveRoomCheckpoint().catch(() =>
+        setRoomError("Your room position couldn't be saved."),
+      )
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [playerReady, roomId, userId])
 
   useEffect(() => {
     if (!hostId || hostId === userId) return
@@ -644,6 +924,33 @@ export default function WatchRoom({
     playback.playing ? player.playVideo?.() : player.pauseVideo?.()
   }
 
+  const saveRoomCheckpoint = async () => {
+    const position = playerRef.current?.getCurrentTime?.() ?? videoTime
+    if (!Number.isFinite(position)) return
+    await update(ref(realtimeDatabase), {
+      [`users/${userId}/roomCheckpoints/${roomId}`]: {
+        movieUrl: activeVideoUrlRef.current,
+        title: activeVideoTitleRef.current,
+        position: Math.max(0, position),
+        updatedAt: Date.now(),
+      },
+    })
+  }
+
+  const resumeFromCheckpoint = async () => {
+    if (hostId !== userId || resumeSuggestion === null) return
+    const position = Math.max(0, resumeSuggestion)
+    try {
+      await publishPlayback(false, position)
+      playerRef.current?.seekTo?.(position, true)
+      playerRef.current?.pauseVideo?.()
+      setResumeSuggestion(null)
+      roomResumePromptHandledRef.current = true
+    } catch {
+      setRoomError("Playback couldn't resume from your saved position.")
+    }
+  }
+
   const takeControl = async () => {
     if (!hostLeft) return
     try {
@@ -716,7 +1023,109 @@ export default function WatchRoom({
     }
   }
 
+  const addVideoToQueue = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (addingToQueue) return
+    if (hostId !== userId && !settings.guestsCanQueue) {
+      setSendError("The host has paused guest suggestions for this room.")
+      return
+    }
+    const nextUrl = canonicalYoutubeUrl(queueDraft)
+    if (!nextUrl) {
+      setSendError("Paste a valid YouTube video, Shorts, or embed link.")
+      return
+    }
+
+    setAddingToQueue(true)
+    setSendError("")
+    try {
+      let title = "YouTube video"
+      try {
+        const response = await fetch(
+          `https://www.youtube.com/oembed?url=${encodeURIComponent(nextUrl)}&format=json`,
+        )
+        if (response.ok)
+          title = String((await response.json()).title || title).slice(0, 120)
+      } catch {
+        // Keep queueing available when YouTube metadata is unavailable.
+      }
+
+      const queueRef = push(ref(realtimeDatabase, `rooms/${roomId}/queue`))
+      await set(queueRef, {
+        url: nextUrl,
+        title,
+        addedBy: userId,
+        createdAt: serverTimestamp(),
+      })
+      setQueueDraft("")
+      void trackAnalyticsEvent("room_queue_video_added")
+    } catch {
+      setSendError(
+        "The video couldn't be added to the queue. Check your connection and room permissions.",
+      )
+    } finally {
+      setAddingToQueue(false)
+    }
+  }
+
+  const updateRoomSetting = async (key: keyof RoomSettings, value: boolean) => {
+    if (hostId !== userId || savingRoomSettings) return
+    setSavingRoomSettings(true)
+    setSendError("")
+    try {
+      await update(ref(realtimeDatabase, `rooms/${roomId}/settings`), {
+        [key]: value,
+      })
+    } catch {
+      setSendError(
+        "Room settings couldn't be updated. Check your connection and permissions.",
+      )
+    } finally {
+      setSavingRoomSettings(false)
+    }
+  }
+
+  const removeQueuedVideo = async (item: QueueItem) => {
+    if (item.addedBy !== userId && hostId !== userId) return
+    try {
+      await remove(ref(realtimeDatabase, `rooms/${roomId}/queue/${item.id}`))
+    } catch {
+      setSendError("That video couldn't be removed from the queue.")
+    }
+  }
+
+  const playQueuedVideo = async (item: QueueItem) => {
+    if (hostId !== userId || playingQueueId) return
+    setPlayingQueueId(item.id)
+    setSendError("")
+    try {
+      await update(ref(realtimeDatabase), {
+        [`rooms/${roomId}/movieUrl`]: item.url,
+        [`rooms/${roomId}/title`]: item.title,
+        [`rooms/${roomId}/updatedAt`]: serverTimestamp(),
+        [`rooms/${roomId}/playback`]: {
+          playing: false,
+          currentTime: 0,
+          updatedAt: serverTimestamp(),
+          hostId: userId,
+        },
+        [`rooms/${roomId}/queue/${item.id}`]: null,
+        [`roomDirectory/${roomId}/movieUrl`]: item.url,
+        [`roomDirectory/${roomId}/title`]: item.title,
+        [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
+      })
+      void trackAnalyticsEvent("room_queue_video_played")
+    } catch {
+      setSendError(
+        "That video couldn't be played. Check your connection and room permissions.",
+      )
+    } finally {
+      setPlayingQueueId("")
+    }
+  }
+
   const sendMessage = async () => {
+    if (!settings.chatEnabled) return
     const value = sanitizeMessage(text.trim())
     if (!isValidMessage(value)) {
       setSendError("Write a message before sending (up to 500 characters).")
@@ -744,7 +1153,7 @@ export default function WatchRoom({
   }
 
   const sendReaction = async (emoji: string) => {
-    if (!isValidReaction(emoji)) return
+    if (!settings.reactionsEnabled || !isValidReaction(emoji)) return
     setSendError("")
     try {
       const reactionRef = push(
@@ -850,6 +1259,7 @@ export default function WatchRoom({
       return
     setLeaving(true)
     try {
+      await saveRoomCheckpoint()
       await recordWatchSession(
         userId,
         roomId,
@@ -858,6 +1268,8 @@ export default function WatchRoom({
         sessionIdRef.current,
         roomTitleRef.current,
       )
+      await saveWatchRecap(userId, roomId, createRoomRecap())
+      roomRecapSavedRef.current = true
       void trackAnalyticsEvent("room_ended", {
         duration_seconds: Math.floor(watchedSecondsRef.current),
       })
@@ -888,6 +1300,7 @@ export default function WatchRoom({
     setLeaving(true)
     setSendError("")
     try {
+      await saveRoomCheckpoint()
       if (watchedSecondsRef.current > 0) {
         await recordWatchSession(
           userId,
@@ -897,6 +1310,10 @@ export default function WatchRoom({
           sessionIdRef.current,
           roomTitleRef.current,
         )
+      }
+      if (!roomRecapSavedRef.current) {
+        await saveWatchRecap(userId, roomId, createRoomRecap())
+        roomRecapSavedRef.current = true
       }
       if (hostId !== userId) {
         await onDisconnect(
@@ -943,6 +1360,15 @@ export default function WatchRoom({
         </button>
         <div className="hidden text-sm font-bold sm:block">Room {roomId}</div>
         <div className="flex items-center gap-2">
+          {hostId === userId && (
+            <button
+              className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
+              onClick={() => setShowRoomSettings(true)}
+              type="button"
+            >
+              Room settings
+            </button>
+          )}
           {hostId === userId && (
             <button
               className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
@@ -1013,6 +1439,29 @@ export default function WatchRoom({
                 ? "Playing together"
                 : "Paused"}
           </div>
+          {hostId === userId && playerReady && resumeSuggestion !== null && (
+            <div className="absolute left-1/2 top-14 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-navy/95 px-3 py-2 text-xs text-ivory shadow-lg">
+              <span>Pick up at {formatVideoTime(resumeSuggestion)}?</span>
+              <button
+                className="focus-ring rounded-full bg-coral px-3 py-1 font-bold text-white"
+                onClick={() => void resumeFromCheckpoint()}
+                type="button"
+              >
+                Resume
+              </button>
+              <button
+                aria-label="Dismiss resume suggestion"
+                className="focus-ring rounded-full border border-white/30 px-2 py-1"
+                onClick={() => {
+                  setResumeSuggestion(null)
+                  roomResumePromptHandledRef.current = true
+                }}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          )}
           {hostId !== userId && !hostLeft && (
             <div className="absolute left-4 right-4 top-14 z-20 flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
               <span>Guest mode · playback follows the host</span>
@@ -1077,58 +1526,58 @@ export default function WatchRoom({
               </button>
             </div>
           )}
-          <div
-            className={`absolute right-4 z-50 ${
-              showReactions ? "bottom-20" : "bottom-4"
-            }`}
-          >
-            {showReactions ? (
-              <div
-                aria-label="Choose a reaction"
-                className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1.5 overflow-x-auto rounded-full border border-white/15 bg-[#172327]/95 p-2 shadow-2xl backdrop-blur-md"
-                role="group"
-              >
-                {REACTIONS.map((reaction) => (
+          {settings.reactionsEnabled && (
+            <div
+              className={`absolute right-4 z-50 ${
+                showReactions ? "bottom-20" : "bottom-4"
+              }`}
+            >
+              {showReactions ? (
+                <div
+                  aria-label="Choose a reaction"
+                  className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1.5 overflow-x-auto rounded-full border border-white/15 bg-[#172327]/95 p-2 shadow-2xl backdrop-blur-md"
+                  role="group"
+                >
+                  {REACTIONS.map((reaction) => (
+                    <button
+                      key={reaction}
+                      aria-label={`React: ${REACTION_LABELS[reaction]}`}
+                      title={REACTION_LABELS[reaction]}
+                      onClick={() => void sendReaction(reaction)}
+                      className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl leading-none transition hover:scale-110 hover:bg-white/20 active:scale-95"
+                      type="button"
+                    >
+                      <span aria-hidden="true">{reaction}</span>
+                    </button>
+                  ))}
                   <button
-                    key={reaction}
-                    aria-label={`React: ${REACTION_LABELS[reaction]}`}
-                    title={REACTION_LABELS[reaction]}
-                    onClick={() => void sendReaction(reaction)}
-                    className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl leading-none transition hover:scale-110 hover:bg-white/20 active:scale-95"
+                    aria-label="Close reactions"
+                    onClick={() => setShowReactions(false)}
+                    className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/90 transition hover:bg-white/25"
                     type="button"
                   >
-                    <span aria-hidden="true">{reaction}</span>
+                    ×
                   </button>
-                ))}
+                </div>
+              ) : (
                 <button
-                  aria-label="Close reactions"
-                  onClick={() => setShowReactions(false)}
-                  className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/90 transition hover:bg-white/25"
+                  aria-label="Open reactions"
+                  onClick={() => setShowReactions(true)}
+                  className="focus-ring flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#25292d]/95 text-2xl text-white shadow-2xl backdrop-blur-md"
                   type="button"
                 >
-                  ×
+                  +
                 </button>
-              </div>
-            ) : (
-              <button
-                aria-label="Open reactions"
-                onClick={() => setShowReactions(true)}
-                className="focus-ring flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#25292d]/95 text-2xl text-white shadow-2xl backdrop-blur-md"
-                type="button"
-              >
-                +
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
           {latestReactions.map((reaction) => (
             <span
               key={reaction.id}
               className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 z-40 text-5xl drop-shadow-lg"
               aria-hidden="true"
             >
-              {REACTIONS.includes(reaction.emoji)
-                ? reaction.emoji
-                : "✨"}
+              {REACTIONS.includes(reaction.emoji) ? reaction.emoji : "✨"}
             </span>
           ))}
           {roomEnded && (
@@ -1190,17 +1639,47 @@ export default function WatchRoom({
                   .join(" · ")}
               </span>
             </div>
+            <form
+              className="mt-4 flex gap-2"
+              onSubmit={(event) => void addVideoToQueue(event)}
+            >
+              <input
+                aria-label="Add a YouTube video to the shared queue"
+                className="input-field focus-ring min-w-0 flex-1 rounded-lg px-3 py-2 text-xs"
+                maxLength={500}
+                onChange={(event) => setQueueDraft(event.target.value)}
+                placeholder={
+                  hostId !== userId && !settings.guestsCanQueue
+                    ? "The host paused guest suggestions"
+                    : "Add a YouTube video to the queue"
+                }
+                type="url"
+                disabled={hostId !== userId && !settings.guestsCanQueue}
+                value={queueDraft}
+              />
+              <button
+                className="button-primary focus-ring shrink-0 rounded-lg px-3 py-2 text-xs font-bold"
+                disabled={
+                  addingToQueue ||
+                  !queueDraft.trim() ||
+                  (hostId !== userId && !settings.guestsCanQueue)
+                }
+                type="submit"
+              >
+                {addingToQueue ? "Adding…" : "Add"}
+              </button>
+            </form>
             {hostId === userId && (
               <form
-                className="mt-4 flex gap-2"
+                className="mt-2 flex gap-2"
                 onSubmit={(event) => void changeVideo(event)}
               >
                 <input
-                  aria-label="Change the room video"
-                  className="input-field focus-ring min-w-0 rounded-lg px-3 py-2 text-xs"
+                  aria-label="Change the room video immediately"
+                  className="input-field focus-ring min-w-0 flex-1 rounded-lg px-3 py-2 text-xs"
                   maxLength={500}
                   onChange={(event) => setVideoDraft(event.target.value)}
-                  placeholder="Paste a YouTube link to change video"
+                  placeholder="Or change the current video now"
                   type="url"
                   value={videoDraft}
                 />
@@ -1209,11 +1688,76 @@ export default function WatchRoom({
                   disabled={changingVideo || !videoDraft.trim()}
                   type="submit"
                 >
-                  {changingVideo ? "Changing…" : "Change"}
+                  {changingVideo ? "Changing…" : "Change now"}
                 </button>
               </form>
             )}
           </div>
+          <section
+            aria-labelledby="room-queue-title"
+            className="border-b hairline px-5 py-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-bold" id="room-queue-title">
+                Shared queue
+              </h2>
+              <span className="text-xs text-muted-ink">
+                {queueItems.length}{" "}
+                {queueItems.length === 1 ? "video" : "videos"}
+              </span>
+            </div>
+            {queueItems.length === 0 ? (
+              <p className="py-3 text-xs text-muted-ink">
+                Add a video for what you should watch next.
+              </p>
+            ) : (
+              <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+                {queueItems.map((item, index) => (
+                  <li
+                    className="flex items-center gap-2 rounded-xl bg-sand/40 px-3 py-2"
+                    key={item.id}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="truncate text-xs font-semibold"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </p>
+                      <p className="truncate text-[10px] text-muted-ink">
+                        {index === 0 ? "Up next · " : ""}
+                        {item.addedBy === userId
+                          ? "Added by you"
+                          : `Added by ${participantNames[item.addedBy] || "room guest"}`}
+                      </p>
+                    </div>
+                    {hostId === userId && (
+                      <button
+                        aria-label={`Play ${item.title} now`}
+                        className="button-quiet focus-ring shrink-0 rounded-lg border px-2 py-1 text-[10px] font-bold"
+                        disabled={Boolean(playingQueueId)}
+                        onClick={() => void playQueuedVideo(item)}
+                        type="button"
+                      >
+                        {playingQueueId === item.id ? "Playing…" : "Play"}
+                      </button>
+                    )}
+                    {(item.addedBy === userId || hostId === userId) && (
+                      <button
+                        aria-label={`Remove ${item.title} from the queue`}
+                        className="button-quiet focus-ring shrink-0 rounded-lg px-2 py-1 text-xs"
+                        disabled={Boolean(playingQueueId)}
+                        onClick={() => void removeQueuedVideo(item)}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           {(roomError || sendError) && (
             <div className="space-y-1 px-4 pt-3">
               {roomError && (
@@ -1234,7 +1778,7 @@ export default function WatchRoom({
               )}
             </div>
           )}
-          <div className="min-h-[35dvh] max-h-[55dvh] flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:min-h-0 lg:max-h-none">
+          <div className="room-chat-content min-h-[35dvh] max-h-[55dvh] flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:min-h-0 lg:max-h-none">
             {messages.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-ink">
                 Your conversation will appear here. Say hello when you’re ready.
@@ -1322,50 +1866,127 @@ export default function WatchRoom({
             )}
             <div ref={messageEndRef} />
           </div>
-          <div className="border-t hairline p-3 sm:p-4">
-            <div className="flex gap-2">
-              <input
-                className="input-field focus-ring min-w-0 rounded-2xl px-4 py-3 text-sm"
-                value={text}
-                maxLength={500}
-                onChange={(event) => {
-                  const next = event.target.value
-                  setText(next)
-                  void set(
-                    ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
-                    Boolean(next.trim()),
-                  )
-                }}
-                onBlur={() =>
-                  void remove(
-                    ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
-                  )
-                }
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.nativeEvent.isComposing &&
-                    event.keyCode !== 229
-                  ) {
-                    event.preventDefault()
-                    void sendMessage()
+          {settings.chatEnabled ? (
+            <div className="border-t hairline p-3 sm:p-4">
+              <div className="flex gap-2">
+                <input
+                  className="input-field focus-ring min-w-0 rounded-2xl px-4 py-3 text-sm"
+                  value={text}
+                  maxLength={500}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setText(next)
+                    void set(
+                      ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
+                      Boolean(next.trim()),
+                    )
+                  }}
+                  onBlur={() =>
+                    void remove(
+                      ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
+                    )
                   }
-                }}
-                placeholder="Say something…"
-                aria-label="Message"
-              />
-              <button
-                className="button-primary focus-ring rounded-2xl px-4 text-sm font-bold"
-                disabled={sending || !text.trim()}
-                onClick={() => void sendMessage()}
-                type="button"
-              >
-                {sending ? "Sending…" : "Send"}
-              </button>
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.nativeEvent.isComposing &&
+                      event.keyCode !== 229
+                    ) {
+                      event.preventDefault()
+                      void sendMessage()
+                    }
+                  }}
+                  placeholder="Say something…"
+                  aria-label="Message"
+                />
+                <button
+                  className="button-primary focus-ring rounded-2xl px-4 text-sm font-bold"
+                  disabled={sending || !text.trim()}
+                  onClick={() => void sendMessage()}
+                  type="button"
+                >
+                  {sending ? "Sending…" : "Send"}
+                </button>
+              </div>
+              {accessibility.keyboardShortcuts && (
+                <p className="mt-2 text-[10px] text-muted-ink">
+                  Shortcuts: Space play/pause · ←/→ seek 10 sec · R reactions
+                </p>
+              )}
             </div>
-          </div>
+          ) : (
+            <p className="border-t hairline p-4 text-center text-sm text-muted-ink">
+              Chat is paused by the host.
+            </p>
+          )}
         </aside>
       </main>
+
+      {showRoomSettings && hostId === userId && (
+        <AccessibleDialog
+          labelledBy="room-settings-title"
+          onClose={() => setShowRoomSettings(false)}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow text-coral">Host controls</p>
+              <h2 className="mt-2 text-3xl" id="room-settings-title">
+                Room settings
+              </h2>
+            </div>
+            <button
+              aria-label="Close room settings"
+              className="button-quiet focus-ring flex h-9 w-9 items-center justify-center rounded-full border"
+              onClick={() => setShowRoomSettings(false)}
+              type="button"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-muted-ink">
+            Choose what participants can do in this room.
+          </p>
+          <div className="mt-5 space-y-3">
+            {([
+              ["chatEnabled", "Chat", "Let both people send messages."],
+              [
+                "reactionsEnabled",
+                "Reactions",
+                "Let both people send quick reactions.",
+              ],
+              [
+                "guestsCanQueue",
+                "Guest suggestions",
+                "Let your guest add videos to the shared queue.",
+              ],
+            ] as const).map(([key, title, description]) => (
+              <label
+                className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border hairline p-4"
+                key={key}
+              >
+                <span>
+                  <span className="block font-semibold">{title}</span>
+                  <span className="mt-1 block text-xs text-muted-ink">
+                    {description}
+                  </span>
+                </span>
+                <input
+                  checked={settings[key]}
+                  className="h-5 w-5 accent-coral"
+                  disabled={savingRoomSettings}
+                  onChange={(event) =>
+                    void updateRoomSetting(key, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted-ink" role="status">
+            {savingRoomSettings ? "Saving room settings…" : ""}
+          </p>
+        </AccessibleDialog>
+      )}
 
       {showNamePrompt && (
         <AccessibleDialog

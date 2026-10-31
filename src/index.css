@@ -194,6 +194,20 @@ h1, h2, h3, h4 {
   }
 }
 
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+html.large-chat .room-chat-content {
+  font-size: 1.125rem;
+  line-height: 1.75;
+}
+
 .soft-card {
   border: 1px solid var(--line);
   background: rgba(251, 247, 240, 0.74);

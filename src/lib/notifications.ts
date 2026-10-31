@@ -14,17 +14,18 @@ export interface Notification {
   body: string
   createdAt: number
   read?: boolean
-  type?: "invite" | "system" | "message"
+  type?: "invite" | "system" | "message" | "schedule"
   roomId?: string
 }
 
 export async function createNotification(
   userId: string,
   notification: Omit<Notification, "id" | "createdAt">,
+  notificationId?: string,
 ) {
-  const notificationRef = push(
-    ref(realtimeDatabase, `users/${userId}/notifications`),
-  )
+  const notificationRef = notificationId
+    ? ref(realtimeDatabase, `users/${userId}/notifications/${notificationId}`)
+    : push(ref(realtimeDatabase, `users/${userId}/notifications`))
   return set(notificationRef, {
     ...notification,
     createdAt: serverTimestamp(),

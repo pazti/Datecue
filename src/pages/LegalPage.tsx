@@ -21,8 +21,9 @@ const DOCUMENTS = {
       {
         title: "Information we use",
         paragraphs: [
-          "Account information includes your Firebase user identifier, email address, and display name. Room information includes room codes, participant presence, messages, reactions, playback state, and the YouTube video URL and title.",
+          "Account information includes your Firebase user identifier, email address, and display name. Room information includes room codes, participant presence, messages, reactions, playback state, the current YouTube video URL and title, and queued video URLs, titles, and the identity of the participant who added each video.",
           "When watch history is enabled, Datecue saves the video title and URL, thumbnail URL, room identifier, and watch duration to your account. The app also stores in-app notifications and basic product events such as room creation, join attempts, playback starts, and session duration when Firebase Analytics is enabled for the project.",
+          "Optional scheduled rooms store their selected video, title, room code, scheduled time, and reminder status. Your account may also store private playback checkpoints, room recaps (including participant display names and selected chat highlights), and accessibility preferences.",
         ],
       },
       {
@@ -42,14 +43,14 @@ const DOCUMENTS = {
       {
         title: "Retention and security",
         paragraphs: [
-          "Room data is removed when the host ends a room or when scheduled cleanup removes a room after approximately 48 hours without activity. Cleanup runs daily, so removal may take up to about 24 hours longer. Account profile, watch history, statistics, and notifications remain stored until you delete your account or the service operator removes them.",
+          "Room data is removed when the host ends a room or when scheduled cleanup removes a room after approximately 48 hours without activity. Cleanup runs daily, so removal may take up to about 24 hours longer. Account profile, watch history, statistics, notifications, scheduled rooms, playback checkpoints, recaps, and accessibility preferences remain stored until you delete your account or the service operator removes them.",
           "Firebase Authentication and database rules restrict access to verified accounts and room members. Room chat and playback data are not end-to-end encrypted. No online service can guarantee absolute security.",
         ],
       },
       {
         title: "Your choices",
         paragraphs: [
-          "You can choose what to include in your display name and messages, leave rooms, clear notifications, turn off browser alerts, download a JSON copy of your account data, or delete your account from your profile. Account deletion removes your profile, history, statistics, notifications, and rooms you host. The service operator's privacy contact must be published before public launch so you can make other access requests.",
+          "You can choose what to include in your display name, messages, and queued videos, leave rooms, clear notifications, turn off browser alerts, download a JSON copy of your account data, or delete your account from your profile. Account deletion removes your profile, history, statistics, notifications, scheduled rooms, playback checkpoints, recaps, accessibility preferences, rooms you host, and queued videos you added to other rooms. The service operator's privacy contact must be published before public launch so you can make other access requests.",
         ],
       },
       {
@@ -84,7 +85,8 @@ const DOCUMENTS = {
         title: "Your conduct and content",
         paragraphs: [
           "Do not use Datecue to violate law or another person's rights, harass or threaten someone, distribute malicious material, interfere with the service, or attempt to access rooms or accounts without authorization.",
-          "You retain responsibility for messages and display names you submit. You authorize Datecue to store and display that content as needed to provide room chat, presence, notifications, and account history to you and the other room participant.",
+          "You retain responsibility for messages, display names, and queued videos you submit. You authorize Datecue to store and display that content as needed to provide room chat, presence, the shared watch queue, notifications, and account history to you and the other room participant.",
+          "Scheduled-room times, private playback checkpoints, watch recaps, and accessibility preferences are saved to your account to provide those optional features. Recaps may include display names and selected room chat highlights.",
         ],
       },
       {

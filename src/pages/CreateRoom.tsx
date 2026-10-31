@@ -33,12 +33,18 @@ export default function CreateRoom({
   )
   const [url, setUrl] = useState(initialMovieUrl)
   const [code, setCode] = useState(initialRoomCode.toUpperCase())
+  const [scheduledAt, setScheduledAt] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [hasProfileName, setHasProfileName] = useState(false)
   const [profileName, setProfileName] = useState("")
   let roomLookupTimeout = 0
+  const minScheduleValue = new Date(
+    Date.now() + 5 * 60 * 1000 - new Date().getTimezoneOffset() * 60 * 1000,
+  )
+    .toISOString()
+    .slice(0, 16)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
   const muted = darkMode ? "text-ivory/60" : "text-muted-ink"
   useEffect(() => {
@@ -79,6 +85,21 @@ export default function CreateRoom({
       setError("Paste a valid YouTube video, Shorts, or embed link.")
       return
     }
+    const scheduledTimestamp = scheduledAt
+      ? new Date(scheduledAt).getTime()
+      : null
+    if (
+      tab === "create" &&
+      scheduledTimestamp !== null &&
+      (!Number.isFinite(scheduledTimestamp) ||
+        scheduledTimestamp < Date.now() + 5 * 60 * 1000 ||
+        scheduledTimestamp > Date.now() + 365 * 24 * 60 * 60 * 1000)
+    ) {
+      setError(
+        "Choose a time at least 5 minutes from now and within the next year.",
+      )
+      return
+    }
     if (!/^[A-Z0-9]{6}$/.test(id)) {
       setError("Enter a 6-character room code.")
       return
@@ -89,7 +110,9 @@ export default function CreateRoom({
       return
     }
     if (
-      currentUser.providerData.some((provider) => provider.providerId === "password") &&
+      currentUser.providerData.some(
+        (provider) => provider.providerId === "password",
+      ) &&
       !currentUser.emailVerified
     ) {
       setError("Verify your email before creating or joining a room.")
@@ -103,8 +126,11 @@ export default function CreateRoom({
         const createdAt = serverTimestamp()
         let title = "YouTube video"
         try {
-          const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl!)}&format=json`)
-          if (oembed.ok) title = String((await oembed.json()).title || title).slice(0, 120)
+          const oembed = await fetch(
+            `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl!)}&format=json`,
+          )
+          if (oembed.ok)
+            title = String((await oembed.json()).title || title).slice(0, 120)
         } catch {
           // History can still be saved when YouTube metadata is unavailable.
         }
@@ -115,6 +141,12 @@ export default function CreateRoom({
             createdAt,
             updatedAt: createdAt,
             hostId: userId,
+            ...(scheduledTimestamp ? { scheduledAt: scheduledTimestamp } : {}),
+            settings: {
+              chatEnabled: true,
+              reactionsEnabled: true,
+              guestsCanQueue: true,
+            },
             public: {
               movieUrl: canonicalUrl,
               hostId: userId,
@@ -127,7 +159,19 @@ export default function CreateRoom({
             hostId: userId,
             createdAt,
             updatedAt: createdAt,
+            ...(scheduledTimestamp ? { scheduledAt: scheduledTimestamp } : {}),
           },
+          ...(scheduledTimestamp
+            ? {
+                [`users/${userId}/scheduledRooms/${id}`]: {
+                  roomId: id,
+                  movieUrl: canonicalUrl,
+                  title,
+                  scheduledAt: scheduledTimestamp,
+                  reminderSentAt: null,
+                },
+              }
+            : {}),
         })
         void trackAnalyticsEvent("room_created")
       } else {
@@ -145,15 +189,35 @@ export default function CreateRoom({
         ])
         window.clearTimeout(roomLookupTimeout)
         const room = snap.val()
-        const roomAge = Date.now() - Number(room?.updatedAt ?? room?.createdAt ?? 0)
-        if (!snap.exists() || !room?.movieUrl || room.cleanupPending || roomAge > 48 * 60 * 60 * 1000) {
+        const roomAge =
+          Date.now() - Number(room?.updatedAt ?? room?.createdAt ?? 0)
+        if (
+          !snap.exists() ||
+          !room?.movieUrl ||
+          room.cleanupPending ||
+          roomAge > 48 * 60 * 60 * 1000
+        ) {
           void trackAnalyticsEvent("room_join_failure", { reason: "expired" })
-          setError(room?.cleanupPending
-            ? "That room is closing and can no longer be joined. Start a new room instead."
-            : "That room has expired or is no longer available. Start a new room instead.")
+          setError(
+            room?.cleanupPending
+              ? "That room is closing and can no longer be joined. Start a new room instead."
+              : "That room has expired or is no longer available. Start a new room instead.",
+          )
           return
         }
         await joinRoom(id, currentUser.uid)
+        if (room.scheduledAt && room.scheduledAt > Date.now()) {
+          await update(
+            ref(realtimeDatabase, `users/${userId}/scheduledRooms/${id}`),
+            {
+              roomId: id,
+              movieUrl: room.movieUrl,
+              title: room.title || "YouTube video",
+              scheduledAt: room.scheduledAt,
+              reminderSentAt: null,
+            },
+          )
+        }
         void trackAnalyticsEvent("room_join_success")
         if (room.hostId && room.hostId !== currentUser.uid) {
           void createNotification(room.hostId, {
@@ -207,12 +271,13 @@ export default function CreateRoom({
         </button>
       </header>
       <main className="page-enter mx-auto max-w-xl px-5 pb-20 pt-10 sm:px-8 sm:pt-14">
-        <p className={`eyebrow ${muted}`}>
-          a room for two / setup
-        </p>
-        <h1 className="mt-5 text-[clamp(3.4rem,9vw,5.4rem)] leading-[.9]">Make some room.</h1>
+        <p className={`eyebrow ${muted}`}>a room for two / setup</p>
+        <h1 className="mt-5 text-[clamp(3.4rem,9vw,5.4rem)] leading-[.9]">
+          Make some room.
+        </h1>
         <p className={`mt-5 max-w-md text-base leading-relaxed ${muted}`}>
-          Pick a video or bring a room code. The good part starts when you’re both here.
+          Pick a video or bring a room code. The good part starts when you’re
+          both here.
         </p>
         <form
           className="soft-card mt-8 rounded-[26px] p-5 sm:p-9"
@@ -237,7 +302,12 @@ export default function CreateRoom({
                 key={item}
               >
                 {item === "create" ? "Create a room" : "Join a room"}
-                {tab === item && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-coral" aria-hidden="true" />}
+                {tab === item && (
+                  <span
+                    className="absolute inset-x-0 bottom-0 h-0.5 bg-coral"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </div>
@@ -260,6 +330,25 @@ export default function CreateRoom({
                 type="url"
                 value={url}
               />
+              <label
+                className={`mt-6 block text-xs font-bold uppercase ${muted}`}
+                htmlFor="room-schedule"
+              >
+                Schedule for later{" "}
+                <span className="font-normal normal-case">(optional)</span>
+              </label>
+              <input
+                className="input-field focus-ring mt-2 rounded-xl px-4 py-3.5"
+                id="room-schedule"
+                min={minScheduleValue}
+                onChange={(event) => setScheduledAt(event.target.value)}
+                type="datetime-local"
+                value={scheduledAt}
+              />
+              <p className={`mt-2 text-xs ${muted}`}>
+                Your invite link stays the same. We’ll remind you in Datecue
+                when it’s time.
+              </p>
             </>
           ) : (
             <>
@@ -285,7 +374,10 @@ export default function CreateRoom({
           )}
           {profileLoaded && !hasProfileName && (
             <>
-              <label className={`mt-6 block text-xs font-bold uppercase ${muted}`} htmlFor="room-display-name">
+              <label
+                className={`mt-6 block text-xs font-bold uppercase ${muted}`}
+                htmlFor="room-display-name"
+              >
                 Your display name
               </label>
               <input
@@ -301,7 +393,10 @@ export default function CreateRoom({
             </>
           )}
           {error && (
-            <p className="mt-4 rounded-xl border border-coral/20 bg-coral/10 px-3 py-3 text-sm leading-relaxed text-coral" role="alert">
+            <p
+              className="mt-4 rounded-xl border border-coral/20 bg-coral/10 px-3 py-3 text-sm leading-relaxed text-coral"
+              role="alert"
+            >
               {error}
             </p>
           )}

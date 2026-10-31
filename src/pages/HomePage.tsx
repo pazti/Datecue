@@ -15,6 +15,31 @@ import {
 import Logo, { Icon } from "../components/Logo"
 import type { LegalDocument } from "./LegalPage"
 
+interface RoomRecap {
+  roomId: string
+  endedAt: number
+  durationSeconds: number
+  participantNames: string[]
+  videos: {
+    title: string
+    movieUrl: string
+    watchedSeconds: number
+  }[]
+  highlights: {
+    text: string
+    senderName: string
+    videoTime: number
+    createdAt: number
+  }[]
+}
+
+interface RoomCheckpoint {
+  movieUrl: string
+  position: number
+  title?: string
+  updatedAt?: number
+}
+
 interface Props {
   userId: string
   darkMode: boolean
@@ -22,7 +47,11 @@ interface Props {
   onProfile: () => void
   onCreate: () => void
   onJoin: () => void
-  onOpenRoom: (roomId: string, movieUrl: string) => void
+  onOpenRoom: (
+    roomId: string,
+    movieUrl: string,
+    resumePosition?: number,
+  ) => void
   onLogout: () => Promise<void>
   onLegal: (document: LegalDocument) => void
 }
@@ -41,6 +70,15 @@ interface HomeNotification {
   body: string
   createdAt?: number
   read?: boolean
+  roomId?: string
+}
+
+interface ScheduledRoom {
+  roomId: string
+  movieUrl: string
+  title?: string
+  scheduledAt: number
+  reminderSentAt?: number | null
 }
 
 export default function HomePage({
@@ -55,6 +93,10 @@ export default function HomePage({
   onLegal,
 }: Props) {
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [recaps, setRecaps] = useState<RoomRecap[]>([])
+  const [roomCheckpoints, setRoomCheckpoints] =
+    useState<Record<string, RoomCheckpoint>>({})
+  const [scheduledRooms, setScheduledRooms] = useState<ScheduledRoom[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -74,7 +116,6 @@ export default function HomePage({
   )
   const [browserAlertsBusy, setBrowserAlertsBusy] = useState(false)
   const [browserAlertsError, setBrowserAlertsError] = useState("")
-
   useEffect(() => {
     let unsubscribe: (() => void) | undefined
     let cancelled = false
@@ -113,6 +154,25 @@ export default function HomePage({
           setTotalSeconds(value.stats?.watchSeconds ?? 0)
           setRoomCount(allHistory.length)
           setHistory(allHistory.slice(0, 8))
+          setRecaps(
+            Object.entries(value.recaps ?? {})
+              .map(([roomId, recap]) => ({
+                roomId,
+                ...recap as Omit<RoomRecap, "roomId">,
+              }))
+              .sort((left, right) => right.endedAt - left.endedAt)
+              .slice(0, 4),
+          )
+          setRoomCheckpoints(value.roomCheckpoints ?? {})
+          setScheduledRooms(
+            (Object.values(value.scheduledRooms ?? {}) as ScheduledRoom[])
+              .filter(
+                (room) =>
+                  Number.isFinite(room.scheduledAt) &&
+                  room.scheduledAt > Date.now() - 60 * 60 * 1000,
+              )
+              .sort((left, right) => left.scheduledAt - right.scheduledAt),
+          )
           setNotifications(value.notifications ?? {})
           setError("")
           setLoading(false)
@@ -147,7 +207,14 @@ export default function HomePage({
           roomId: item.roomId,
         }).catch(() => {})
       }
-      onOpenRoom(item.roomId, item.movieUrl)
+      const checkpoint = roomCheckpoints[item.roomId]
+      onOpenRoom(
+        item.roomId,
+        item.movieUrl,
+        checkpoint?.movieUrl === item.movieUrl
+          ? checkpoint.position
+          : undefined,
+      )
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : ""
       setError(
@@ -156,6 +223,62 @@ export default function HomePage({
           : code.includes("PERMISSION_DENIED")
             ? "That room is full or unavailable. Join with a current room code instead."
             : "That room is no longer available. Start a new room or join with a current code.",
+      )
+    }
+  }
+
+  const openScheduledRoom = async (item: ScheduledRoom) => {
+    setError("")
+    try {
+      await joinRoom(item.roomId, userId)
+      const checkpoint = roomCheckpoints[item.roomId]
+      onOpenRoom(
+        item.roomId,
+        item.movieUrl,
+        checkpoint?.movieUrl === item.movieUrl
+          ? checkpoint.position
+          : undefined,
+      )
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : ""
+      setError(
+        code === "ROOM_EXPIRED"
+          ? "That scheduled room has expired. Create a new room to watch together."
+          : "That room couldn't be opened. Check your connection and try again.",
+      )
+    }
+  }
+
+  const copyScheduledInvite = async (roomId: string) => {
+    const url = `${window.location.origin}${window.location.pathname}#/room/${roomId}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setError("")
+    } catch {
+      setError(
+        "The invite couldn't be copied. Open the room to share its invite.",
+      )
+    }
+  }
+
+  const openNotificationRoom = async (roomId: string) => {
+    setError("")
+    try {
+      const room = await joinRoom(roomId, userId)
+      const checkpoint = roomCheckpoints[roomId]
+      onOpenRoom(
+        roomId,
+        room.movieUrl,
+        checkpoint?.movieUrl === room.movieUrl
+          ? checkpoint.position
+          : undefined,
+      )
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : ""
+      setError(
+        code === "ROOM_EXPIRED"
+          ? "That room has ended or expired. Start a new room or join with a current code."
+          : "That room couldn't be opened. Check your connection and try again.",
       )
     }
   }
@@ -360,6 +483,119 @@ export default function HomePage({
           </div>
         </section>
 
+        {scheduledRooms.length > 0 && (
+          <section aria-labelledby="scheduled-rooms-title" className="mt-8">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className={`eyebrow ${muted}`}>Save the date</p>
+                <h2 className="mt-2 text-3xl" id="scheduled-rooms-title">
+                  Upcoming watch rooms
+                </h2>
+              </div>
+              <span className={`text-xs ${muted}`}>
+                In-app reminders at start time
+              </span>
+            </div>
+            <ul className="mt-4 grid gap-3">
+              {scheduledRooms.map((room) => (
+                <li
+                  className="soft-card flex flex-col gap-3 rounded-[22px] p-4 sm:flex-row sm:items-center"
+                  key={room.roomId}
+                >
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-semibold">
+                      {room.title || "YouTube video"}
+                    </h3>
+                    <p className={`mt-1 text-sm ${muted}`}>
+                      {new Date(room.scheduledAt).toLocaleString([], {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                      {" · Room "}
+                      <span className="mono">{room.roomId}</span>
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="button-quiet focus-ring rounded-xl border px-3 py-2 text-xs font-bold"
+                      onClick={() => void copyScheduledInvite(room.roomId)}
+                      type="button"
+                    >
+                      Copy invite
+                    </button>
+                    <button
+                      className="button-primary focus-ring rounded-xl px-3 py-2 text-xs font-bold"
+                      onClick={() => void openScheduledRoom(room)}
+                      type="button"
+                    >
+                      Open room
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {recaps.length > 0 && (
+          <section aria-labelledby="room-recaps-title" className="mt-10">
+            <p className={`eyebrow ${muted}`}>A little look back</p>
+            <h2 className="mt-2 text-3xl" id="room-recaps-title">
+              Watch-together recaps
+            </h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {recaps.map((recap) => (
+                <article
+                  className="soft-card rounded-[22px] p-5"
+                  key={recap.roomId}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {recap.participantNames.join(" · ") ||
+                          "Your watch night"}
+                      </p>
+                      <p className={`mt-1 text-xs ${muted}`}>
+                        {new Date(recap.endedAt).toLocaleDateString([], {
+                          dateStyle: "long",
+                        })}
+                        {" · "}
+                        {formatDuration(recap.durationSeconds)} together
+                      </p>
+                    </div>
+                    <span className="mono shrink-0 text-xs text-coral">
+                      {recap.videos.length}{" "}
+                      {recap.videos.length === 1 ? "video" : "videos"}
+                    </span>
+                  </div>
+                  <ul className="mt-4 space-y-2 border-t hairline pt-3">
+                    {recap.videos.slice(0, 3).map((video) => (
+                      <li
+                        className="flex items-center justify-between gap-3 text-sm"
+                        key={video.movieUrl}
+                      >
+                        <span className="truncate">{video.title}</span>
+                        <span className={`shrink-0 text-xs ${muted}`}>
+                          {formatDuration(video.watchedSeconds)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {recap.highlights[0] && (
+                    <p className={`mt-3 line-clamp-2 text-sm italic ${muted}`}>
+                      “{recap.highlights[0].text}”
+                      <span className="not-italic">
+                        {" "}
+                        — {recap.highlights[0].senderName}
+                      </span>
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         {showNotifications && (
           <section
             aria-label="Notifications"
@@ -405,6 +641,18 @@ export default function HomePage({
                         )}
                       </div>
                       <div className="flex shrink-0 gap-2">
+                        {item.roomId && (
+                          <button
+                            className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"
+                            onClick={() =>
+                              item.roomId &&
+                              void openNotificationRoom(item.roomId)
+                            }
+                            type="button"
+                          >
+                            Open room
+                          </button>
+                        )}
                         {!item.read && (
                           <button
                             className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold"

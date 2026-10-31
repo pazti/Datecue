@@ -22,6 +22,31 @@ export interface UserProfile {
   updatedAt: number
 }
 
+export interface WatchRecap {
+  endedAt: number
+  durationSeconds: number
+  participantNames: string[]
+  videos: {
+    title: string
+    movieUrl: string
+    watchedSeconds: number
+  }[]
+  highlights: {
+    text: string
+    senderName: string
+    videoTime: number
+    createdAt: number
+  }[]
+}
+
+export async function saveWatchRecap(
+  userId: string,
+  roomId: string,
+  recap: WatchRecap,
+) {
+  return set(ref(realtimeDatabase, `users/${userId}/recaps/${roomId}`), recap)
+}
+
 export async function createRoom(
   roomId: string,
   hostId: string,
@@ -43,7 +68,12 @@ export async function joinRoom(roomId: string, userId: string) {
   const directory = await get(ref(realtimeDatabase, `roomDirectory/${roomId}`))
   const room = directory.val()
   const updatedAt = Number(room?.updatedAt ?? room?.createdAt ?? 0)
-  if (!directory.exists() || !room?.movieUrl || room.cleanupPending || Date.now() - updatedAt > 48 * 60 * 60 * 1000) {
+  if (
+    !directory.exists() ||
+    !room?.movieUrl ||
+    room.cleanupPending ||
+    Date.now() - updatedAt > 48 * 60 * 60 * 1000
+  ) {
     throw new Error("ROOM_EXPIRED")
   }
   if (room.hostId === userId) {
@@ -159,7 +189,9 @@ export async function recordWatchSession(
           title,
           thumbnailUrl: (() => {
             const videoId = youtubeVideoIdFromUrl(movieUrl)
-            return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null
+            return videoId
+              ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+              : null
           })(),
           watchedSeconds: (previous.watchedSeconds ?? 0) + addedSeconds,
           updatedAt: Date.now(),

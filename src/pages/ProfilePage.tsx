@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { onValue, ref } from "firebase/database"
+import { onValue, ref, update } from "firebase/database"
 import Logo, { Icon } from "../components/Logo"
 import { formatDuration, realtimeDatabase } from "../lib/firebase"
 import { saveUserProfile, type UserProfile } from "../lib/rooms"
@@ -13,6 +13,12 @@ interface HistoryItem {
   thumbnailUrl?: string | null
   watchedSeconds?: number
   updatedAt?: number
+}
+
+interface AccessibilityPreferences {
+  reduceMotion: boolean
+  largerChatText: boolean
+  keyboardShortcuts: boolean
 }
 
 interface Props {
@@ -52,6 +58,11 @@ export default function ProfilePage({
   const [nameDraft, setNameDraft] = useState("")
   const [bioDraft, setBioDraft] = useState("")
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [accessibility, setAccessibility] = useState<AccessibilityPreferences>({
+    reduceMotion: false,
+    largerChatText: false,
+    keyboardShortcuts: false,
+  })
   const [totalSeconds, setTotalSeconds] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -73,6 +84,12 @@ export default function ProfilePage({
         (snapshot) => {
           const value = snapshot.val() ?? {}
           setAccountData(value)
+          const preferences = value.preferences?.accessibility ?? {}
+          setAccessibility({
+            reduceMotion: preferences.reduceMotion === true,
+            largerChatText: preferences.largerChatText === true,
+            keyboardShortcuts: preferences.keyboardShortcuts === true,
+          })
           const nextProfile = (value.profile ?? {}) as Partial<UserProfile>
           const nextHistory = Object.entries(value.history ?? {})
             .map(([key, item]) => ({
@@ -132,6 +149,26 @@ export default function ProfilePage({
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const updateAccessibility = async (
+    key: keyof AccessibilityPreferences,
+    enabled: boolean,
+  ) => {
+    const previous = accessibility[key]
+    setAccessibility((current) => ({ ...current, [key]: enabled }))
+    setError("")
+    try {
+      await update(
+        ref(realtimeDatabase, `users/${userId}/preferences/accessibility`),
+        {
+          [key]: enabled,
+        },
+      )
+    } catch {
+      setAccessibility((current) => ({ ...current, [key]: previous }))
+      setError("That accessibility preference couldn't be saved. Try again.")
     }
   }
 
@@ -369,6 +406,68 @@ export default function ProfilePage({
             </div>
           </form>
         </div>
+
+        <section
+          aria-labelledby="accessibility-title"
+          className="soft-card mt-8 rounded-[28px] p-6 sm:p-8"
+        >
+          <p className="eyebrow text-coral">Make it comfortable</p>
+          <h2 className="mt-2 text-3xl" id="accessibility-title">
+            Accessibility preferences
+          </h2>
+          <p className={`mt-2 max-w-2xl text-sm leading-relaxed ${muted}`}>
+            These choices follow your account across devices.
+          </p>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {([
+              [
+                "reduceMotion",
+                "Reduce motion",
+                "Minimize decorative animation and movement.",
+              ],
+              [
+                "largerChatText",
+                "Larger chat text",
+                "Make room messages easier to read.",
+              ],
+              [
+                "keyboardShortcuts",
+                "Keyboard shortcuts",
+                "Enable host playback and quick-reaction keys.",
+              ],
+            ] as const).map(([key, title, description]) => (
+              <label
+                className="flex cursor-pointer items-start gap-3 rounded-2xl border hairline p-4"
+                key={key}
+              >
+                <input
+                  checked={accessibility[key]}
+                  className="mt-1 h-5 w-5 shrink-0 accent-coral"
+                  disabled={loading}
+                  onChange={(event) =>
+                    void updateAccessibility(key, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold">{title}</span>
+                  <span
+                    className={`mt-1 block text-xs leading-relaxed ${muted}`}
+                  >
+                    {description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {accessibility.keyboardShortcuts && (
+            <p className={`mt-4 text-xs ${muted}`} role="note">
+              In a room: Space plays or pauses, ←/→ seeks 10 seconds, and R
+              opens reactions. Shortcuts are inactive while typing or using a
+              control.
+            </p>
+          )}
+        </section>
 
         <section className="mt-12">
           <div className="flex flex-wrap items-end justify-between gap-3">

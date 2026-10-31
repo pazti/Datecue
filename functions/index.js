@@ -65,7 +65,7 @@ exports.deleteAccountData = onCall(async (request) => {
   const directory = await database.ref("roomDirectory").get()
   const rooms = Object.entries(directory.val() ?? {})
   const updates = { [`users/${uid}`]: null }
-  const guestSeatChecks = []
+  const roomCleanupChecks = []
 
   for (const [roomId, room] of rooms) {
     if (room.hostId === uid) {
@@ -75,7 +75,7 @@ exports.deleteAccountData = onCall(async (request) => {
     }
     updates[`rooms/${roomId}/presence/${uid}`] = null
     updates[`rooms/${roomId}/typing/${uid}`] = null
-    guestSeatChecks.push(
+    roomCleanupChecks.push(
       database
         .ref(`rooms/${roomId}/guestSeat`)
         .get()
@@ -83,9 +83,20 @@ exports.deleteAccountData = onCall(async (request) => {
           if (seat.val() === uid) updates[`rooms/${roomId}/guestSeat`] = null
         }),
     )
+    roomCleanupChecks.push(
+      database
+        .ref(`rooms/${roomId}/queue`)
+        .get()
+        .then((queue) => {
+          for (const [queueId, item] of Object.entries(queue.val() ?? {})) {
+            if (item.addedBy === uid)
+              updates[`rooms/${roomId}/queue/${queueId}`] = null
+          }
+        }),
+    )
   }
 
-  await Promise.all(guestSeatChecks)
+  await Promise.all(roomCleanupChecks)
   await database.ref().update(updates)
   await adminAuth.deleteUser(uid)
   return { success: true }

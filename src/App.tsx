@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { onAuthStateChanged, signOut } from "firebase/auth"
+import { onValue, ref, update } from "firebase/database"
+import { createNotification } from "./lib/notifications"
 import LandingPage from "./pages/LandingPage"
 import CreateRoom from "./pages/CreateRoom"
 import WatchRoom from "./pages/WatchRoom"
@@ -10,12 +12,17 @@ import ProfilePage from "./pages/ProfilePage"
 import type { LegalDocument } from "./pages/LegalPage"
 import AppErrorBoundary from "./components/AppErrorBoundary"
 import { LiquidBackdrop } from "./components/LiquidHero"
-import { auth } from "./lib/firebase"
+import { auth, realtimeDatabase } from "./lib/firebase"
 
 type Screen = "landing" | "auth" | "home" | "profile" | "create" | "watch" | LegalDocument
 interface Route {
   screen: Screen
   roomCode?: string
+}
+
+interface PageMetadata {
+  title: string
+  description: string
 }
 
 function readRoute(): Route {
@@ -57,6 +64,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false)
   const [roomId, setRoomId] = useState("")
   const [movieUrl, setMovieUrl] = useState("")
+  const [resumePosition, setResumePosition] = useState<number | undefined>()
   const [pendingRoomCode, setPendingRoomCode] = useState(
     initialRoute.roomCode ?? "",
   )
@@ -75,7 +83,7 @@ export default function App() {
   }, [screen])
 
   useEffect(() => {
-    const metadata: Record<Screen, { title: string; description: string }> = {
+    const metadata: Record<Screen, PageMetadata> = {
       landing: {
         title: "Datecue | Watch YouTube Together in Sync",
         description:
@@ -199,6 +207,123 @@ export default function App() {
     [initialRoute],
   )
 
+  useEffect(() => {
+    const root = document.documentElement
+    if (!userId) {
+      root.classList.remove("reduce-motion", "large-chat")
+      return
+    }
+    return onValue(
+      ref(realtimeDatabase, `users/${userId}/preferences/accessibility`),
+      (snapshot) => {
+        const preferences = snapshot.val() ?? {}
+        root.classList.toggle(
+          "reduce-motion",
+          preferences.reduceMotion === true,
+        )
+        root.classList.toggle("large-chat", preferences.largerChatText === true)
+      },
+    )
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId) return
+    const timers = new Map<string, number>()
+    const requested = new Set<string>()
+    const armReminder = (
+      roomId: string,
+      room: {
+        title?: string
+        scheduledAt: number
+        reminderSentAt?: number | null
+      },
+    ) => {
+      if (
+        room.reminderSentAt ||
+        room.scheduledAt < Date.now() - 60 * 60 * 1000 ||
+        requested.has(roomId) ||
+        timers.has(roomId)
+      )
+        return
+      const timer = window.setTimeout(
+        () => {
+          timers.delete(roomId)
+          if (room.scheduledAt > Date.now()) {
+            armReminder(roomId, room)
+            return
+          }
+          requested.add(roomId)
+          void createNotification(
+            userId,
+            {
+              title: "Your watch time is here",
+              body: `${room.title || "Your scheduled room"} is ready. Share the invite and start watching.`,
+              type: "schedule",
+              roomId,
+            },
+            `schedule-${roomId}`,
+          )
+            .then(() =>
+              update(
+                ref(
+                  realtimeDatabase,
+                  `users/${userId}/scheduledRooms/${roomId}`,
+                ),
+                { reminderSentAt: Date.now() },
+              ),
+            )
+            .catch((error: unknown) => {
+              requested.delete(roomId)
+              console.error(
+                "Could not save the scheduled-room reminder.",
+                error,
+              )
+            })
+        },
+        Math.min(Math.max(0, room.scheduledAt - Date.now()), 2_147_000_000),
+      )
+      timers.set(roomId, timer)
+    }
+
+    const unsubscribe = onValue(
+      ref(realtimeDatabase, `users/${userId}/scheduledRooms`),
+      (snapshot) => {
+        const scheduledRooms = snapshot.val() as Record<string, {
+          title?: string
+          scheduledAt?: number
+          reminderSentAt?: number | null
+        }> | null
+        const activeRoomIds = new Set(Object.keys(scheduledRooms ?? {}))
+        for (const [roomId, timer] of timers) {
+          if (
+            !activeRoomIds.has(roomId) ||
+            scheduledRooms?.[roomId]?.reminderSentAt
+          ) {
+            window.clearTimeout(timer)
+            timers.delete(roomId)
+          }
+        }
+        for (const [roomId, scheduled] of Object.entries(
+          scheduledRooms ?? {},
+        )) {
+          if (typeof scheduled.scheduledAt === "number") {
+            armReminder(roomId, {
+              title: scheduled.title,
+              scheduledAt: scheduled.scheduledAt,
+              reminderSentAt: scheduled.reminderSentAt,
+            })
+          }
+        }
+      },
+      (error) =>
+        console.error("Could not load scheduled-room reminders.", error),
+    )
+    return () => {
+      unsubscribe()
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [userId])
+
   const navigate = (next: Screen, code = "") => {
     const basePath = import.meta.env.BASE_URL || "/"
     const target =
@@ -291,120 +416,124 @@ export default function App() {
     <div className={darkMode ? "dark" : ""}>
       <LiquidBackdrop />
       <div className="app-content">
-          {screen === "landing" && (
-            <LandingPage
-              {...theme}
-              onGetStarted={startCreating}
-              onLogin={() => navigate("auth")}
-              onLegal={openLegal}
-            />
-          )}
-          {screen === "profile" && userId && (
-            <ProfilePage
-              {...theme}
-              userId={userId}
-              email={auth.currentUser?.email ?? ""}
-              onBack={() => navigate("home")}
-              onLogout={async () => {
-                await signOut(auth)
-                navigate("landing")
-              }}
-              onAccountDeleted={async () => {
-                await signOut(auth)
-                navigate("landing")
-              }}
-              onLegal={openLegal}
-            />
-          )}
-          {(screen === "privacy" || screen === "terms") && (
-            <LegalPage
-              document={screen}
-              {...theme}
-              onBack={() => navigate(legalReturnScreen)}
-              onNavigate={openLegal}
-            />
-          )}
-          {screen === "auth" && (
-            <AuthPage
-              {...theme}
-              onSuccess={() => {
-                const next =
-                  pendingRoomCode || pendingMovieUrl || nextAfterAuth
-                    ? "create"
-                    : "home"
-                setNextAfterAuth(null)
-                navigate(next, pendingRoomCode || undefined)
-              }}
-              onBack={() => {
-                setPendingRoomCode("")
-                setPendingMovieUrl("")
-                setNextAfterAuth(null)
-                navigate("landing")
-              }}
-              onLegal={openLegal}
-            />
-          )}
-          {screen === "home" && userId && (
-            <HomePage
-              {...theme}
-              userId={userId}
-              onProfile={() => navigate("profile")}
-              onCreate={() => {
-                setPendingMovieUrl("")
-                setPendingRoomCode("")
-                navigate("create")
-              }}
-              onJoin={() => {
-                setPendingMovieUrl("")
-                setPendingRoomCode("")
-                navigate("create")
-              }}
-              onOpenRoom={(id, url) => {
-                setRoomId(id)
-                setMovieUrl(url)
-                navigate("watch", id)
-              }}
-              onLogout={async () => {
-                await signOut(auth)
-                navigate("landing")
-              }}
-              onLegal={openLegal}
-            />
-          )}
-          {screen === "create" && userId && (
-            <CreateRoom
-              key={`${pendingRoomCode}:${pendingMovieUrl}`}
-              {...theme}
-              userId={userId}
-              initialRoomCode={pendingRoomCode}
-              initialMovieUrl={pendingMovieUrl}
-              onCreateRoom={(id, url) => {
-                setPendingRoomCode("")
-                setPendingMovieUrl("")
-                setRoomId(id)
-                setMovieUrl(url)
-                navigate("watch", id)
-              }}
-              onJoinRoom={(id, url) => {
-                setPendingRoomCode("")
-                setPendingMovieUrl("")
-                setRoomId(id)
-                setMovieUrl(url)
-                navigate("watch", id)
-              }}
-              onBack={() => navigate("home")}
-            />
-          )}
-          {screen === "watch" && userId && (
-            <WatchRoom
-              {...theme}
-              roomId={roomId}
-              movieUrl={movieUrl}
-              userId={userId}
-              onLeave={() => navigate("home")}
-            />
-          )}
-        </div>
+        {screen === "landing" && (
+          <LandingPage
+            {...theme}
+            onGetStarted={startCreating}
+            onLogin={() => navigate("auth")}
+            onLegal={openLegal}
+          />
+        )}
+        {screen === "profile" && userId && (
+          <ProfilePage
+            {...theme}
+            userId={userId}
+            email={auth.currentUser?.email ?? ""}
+            onBack={() => navigate("home")}
+            onLogout={async () => {
+              await signOut(auth)
+              navigate("landing")
+            }}
+            onAccountDeleted={async () => {
+              await signOut(auth)
+              navigate("landing")
+            }}
+            onLegal={openLegal}
+          />
+        )}
+        {(screen === "privacy" || screen === "terms") && (
+          <LegalPage
+            document={screen}
+            {...theme}
+            onBack={() => navigate(legalReturnScreen)}
+            onNavigate={openLegal}
+          />
+        )}
+        {screen === "auth" && (
+          <AuthPage
+            {...theme}
+            onSuccess={() => {
+              const next =
+                pendingRoomCode || pendingMovieUrl || nextAfterAuth
+                  ? "create"
+                  : "home"
+              setNextAfterAuth(null)
+              navigate(next, pendingRoomCode || undefined)
+            }}
+            onBack={() => {
+              setPendingRoomCode("")
+              setPendingMovieUrl("")
+              setNextAfterAuth(null)
+              navigate("landing")
+            }}
+            onLegal={openLegal}
+          />
+        )}
+        {screen === "home" && userId && (
+          <HomePage
+            {...theme}
+            userId={userId}
+            onProfile={() => navigate("profile")}
+            onCreate={() => {
+              setPendingMovieUrl("")
+              setPendingRoomCode("")
+              navigate("create")
+            }}
+            onJoin={() => {
+              setPendingMovieUrl("")
+              setPendingRoomCode("")
+              navigate("create")
+            }}
+            onOpenRoom={(id, url, position) => {
+              setRoomId(id)
+              setMovieUrl(url)
+              setResumePosition(position)
+              navigate("watch", id)
+            }}
+            onLogout={async () => {
+              await signOut(auth)
+              navigate("landing")
+            }}
+            onLegal={openLegal}
+          />
+        )}
+        {screen === "create" && userId && (
+          <CreateRoom
+            key={`${pendingRoomCode}:${pendingMovieUrl}`}
+            {...theme}
+            userId={userId}
+            initialRoomCode={pendingRoomCode}
+            initialMovieUrl={pendingMovieUrl}
+            onCreateRoom={(id, url) => {
+              setPendingRoomCode("")
+              setPendingMovieUrl("")
+              setRoomId(id)
+              setMovieUrl(url)
+              setResumePosition(undefined)
+              navigate("watch", id)
+            }}
+            onJoinRoom={(id, url) => {
+              setPendingRoomCode("")
+              setPendingMovieUrl("")
+              setRoomId(id)
+              setMovieUrl(url)
+              setResumePosition(undefined)
+              navigate("watch", id)
+            }}
+            onBack={() => navigate("home")}
+          />
+        )}
+        {screen === "watch" && userId && (
+          <WatchRoom
+            {...theme}
+            roomId={roomId}
+            movieUrl={movieUrl}
+            resumePosition={resumePosition}
+            userId={userId}
+            onLeave={() => navigate("home")}
+          />
+        )}
       </div>
+    </div>
   )
 }
