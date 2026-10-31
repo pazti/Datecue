@@ -195,7 +195,7 @@ export default function WatchRoom({
   const publishPlaybackRef = useRef<(
     playing: boolean,
     currentTime: number,
-  ) => Promise<void>>(async () => {})
+  ) => Promise<boolean>>(async () => false)
   const roomHostRef = useRef<string | null>(null)
   const displayNameRef = useRef(displayName)
   displayNameRef.current = displayName
@@ -525,7 +525,7 @@ export default function WatchRoom({
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
       if (roomHostRef.current !== userId || !Number.isFinite(currentTime))
-        return
+        return false
       const updatedAt = Date.now()
       try {
         await update(ref(realtimeDatabase), {
@@ -539,10 +539,12 @@ export default function WatchRoom({
           [`roomDirectory/${roomId}/updatedAt`]: serverTimestamp(),
         })
         lastPublishAtRef.current = updatedAt
+        return true
       } catch {
         setRoomError(
           "Playback couldn't sync. Check the room's Firebase rules and your connection.",
         )
+        return false
       }
     },
     [roomId, userId],
@@ -941,7 +943,8 @@ export default function WatchRoom({
     if (hostId !== userId || resumeSuggestion === null) return
     const position = Math.max(0, resumeSuggestion)
     try {
-      await publishPlayback(false, position)
+      const synced = await publishPlayback(false, position)
+      if (!synced) return
       playerRef.current?.seekTo?.(position, true)
       playerRef.current?.pauseVideo?.()
       setResumeSuggestion(null)
