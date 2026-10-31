@@ -6,12 +6,13 @@ import WatchRoom from "./pages/WatchRoom"
 import AuthPage from "./pages/AuthPage"
 import HomePage from "./pages/HomePage"
 import LegalPage from "./pages/LegalPage"
+import ProfilePage from "./pages/ProfilePage"
 import type { LegalDocument } from "./pages/LegalPage"
 import AppErrorBoundary from "./components/AppErrorBoundary"
 import { LiquidBackdrop } from "./components/LiquidHero"
 import { auth } from "./lib/firebase"
 
-type Screen = "landing" | "auth" | "home" | "create" | "watch" | LegalDocument
+type Screen = "landing" | "auth" | "home" | "profile" | "create" | "watch" | LegalDocument
 interface Route {
   screen: Screen
   roomCode?: string
@@ -27,6 +28,7 @@ function readRoute(): Route {
     return { screen: "create", roomCode: roomMatch[1].toUpperCase() }
   if (route === "auth") return { screen: "auth" }
   if (route === "home") return { screen: "home" }
+  if (route === "profile") return { screen: "profile" }
   if (route === "create") return { screen: "create" }
   if (route === "privacy" || route === "terms") return { screen: route }
   return { screen: "landing" }
@@ -45,7 +47,12 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>(
     initialRoute.roomCode ? "auth" : initialRoute.screen,
   )
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(
+    () =>
+      window.localStorage.getItem("datecue-theme") === "dark" ||
+      (!window.localStorage.getItem("datecue-theme") &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches),
+  )
   const [userId, setUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [roomId, setRoomId] = useState("")
@@ -60,6 +67,10 @@ export default function App() {
   const screenRef = useRef(screen)
 
   useEffect(() => {
+    window.localStorage.setItem("datecue-theme", darkMode ? "dark" : "light")
+  }, [darkMode])
+
+  useEffect(() => {
     screenRef.current = screen
   }, [screen])
 
@@ -67,31 +78,43 @@ export default function App() {
     const metadata: Record<Screen, { title: string; description: string }> = {
       landing: {
         title: "Datecue | Watch YouTube Together in Sync",
-        description: "Start a private, two-person YouTube watch party with synced playback, scene-timestamped chat, and live reactions.",
+        description:
+          "Start a private, two-person YouTube watch party with synced playback, scene-timestamped chat, and live reactions.",
       },
       auth: {
         title: "Sign In or Create an Account | Datecue",
-        description: "Create a Datecue account or sign in to start a private watch room and keep your watch history.",
+        description:
+          "Create a Datecue account or sign in to start a private watch room and keep your watch history.",
       },
       home: {
         title: "Your Watch History | Datecue",
-        description: "Return to your Datecue rooms, review watch history, and start another shared YouTube watch party.",
+        description:
+          "Return to your Datecue rooms, review watch history, and start another shared YouTube watch party.",
+      },
+      profile: {
+        title: "Your Profile | Datecue",
+        description:
+          "Manage your Datecue display name, room identity, and private watch history.",
       },
       create: {
         title: "Create or Join a Watch Room | Datecue",
-        description: "Choose a YouTube video to watch together or join a private Datecue room with its six-character code.",
+        description:
+          "Choose a YouTube video to watch together or join a private Datecue room with its six-character code.",
       },
       watch: {
         title: "Watch Together in Sync | Datecue",
-        description: "Watch a YouTube video together with synchronized playback, private chat, and reactions.",
+        description:
+          "Watch a YouTube video together with synchronized playback, private chat, and reactions.",
       },
       privacy: {
         title: "Privacy Policy | Datecue",
-        description: "Learn what Datecue collects, how room and account data is used, and the choices available to you.",
+        description:
+          "Learn what Datecue collects, how room and account data is used, and the choices available to you.",
       },
       terms: {
         title: "Terms of Service | Datecue",
-        description: "Read the terms for using Datecue private watch rooms, chat, reactions, and third-party YouTube embeds.",
+        description:
+          "Read the terms for using Datecue private watch rooms, chat, reactions, and third-party YouTube embeds.",
       },
     }
     const current = metadata[screen]
@@ -109,11 +132,25 @@ export default function App() {
     setMeta('meta[property="og:description"]', "content", current.description)
     setMeta('meta[name="twitter:title"]', "content", current.title)
     setMeta('meta[name="twitter:description"]', "content", current.description)
-    const isPrivateScreen = ["auth", "home", "create", "watch"].includes(screen)
-    setMeta('meta[name="robots"]', "content", isPrivateScreen ? "noindex, nofollow" : "index, follow")
-    const pageUrl = `${window.location.origin}${window.location.pathname}${screen === "privacy" || screen === "terms" ? window.location.hash : ""}`
+    const isPrivateScreen = [
+      "auth",
+      "home",
+      "profile",
+      "create",
+      "watch",
+    ].includes(screen)
+    setMeta(
+      'meta[name="robots"]',
+      "content",
+      isPrivateScreen ? "noindex, nofollow" : "index, follow",
+    )
+    const pageUrl = `${window.location.origin}${window.location.pathname}${
+      screen === "privacy" || screen === "terms" ? window.location.hash : ""
+    }`
     setMeta('meta[property="og:url"]', "content", pageUrl)
-    let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+    let canonical = document.head.querySelector<HTMLLinkElement>(
+      'link[rel="canonical"]',
+    )
     if (!canonical) {
       canonical = document.createElement("link")
       canonical.rel = "canonical"
@@ -128,15 +165,19 @@ export default function App() {
         setUserId(user?.uid ?? null)
         setAuthReady(true)
         const requiresVerification = Boolean(
-          user?.providerData.some((provider) => provider.providerId === "password") &&
-          !user.emailVerified,
+          user?.providerData.some(
+            (provider) => provider.providerId === "password",
+          ) && !user.emailVerified,
         )
         if (!authInitialized.current) {
           authInitialized.current = true
           const route = initialRoute
           if (requiresVerification) setScreen("auth")
           else if (route.roomCode) setScreen(user ? "create" : "auth")
-          else if (!user && ["home", "create", "watch"].includes(route.screen))
+          else if (
+            !user &&
+            ["home", "profile", "create", "watch"].includes(route.screen)
+          )
             setScreen("auth")
           else if (user && route.screen === "auth") {
             setScreen("home")
@@ -150,7 +191,7 @@ export default function App() {
           setScreen("auth")
         } else if (
           !user &&
-          ["home", "create", "watch"].includes(screenRef.current)
+          ["home", "profile", "create", "watch"].includes(screenRef.current)
         ) {
           setScreen("auth")
         }
@@ -164,11 +205,7 @@ export default function App() {
       next === "privacy" || next === "terms"
         ? `${basePath}${next}`
         : `${basePath}${routeHash(next, code)}`
-    window.history.pushState(
-      {},
-      "",
-      `${target}${window.location.search}`,
-    )
+    window.history.pushState({}, "", `${target}${window.location.search}`)
     setScreen(next)
   }
 
@@ -183,12 +220,16 @@ export default function App() {
       setPendingRoomCode(route.roomCode ?? "")
       const currentUser = auth.currentUser
       const requiresVerification = Boolean(
-        currentUser?.providerData.some((provider) => provider.providerId === "password") &&
-        !currentUser.emailVerified,
+        currentUser?.providerData.some(
+          (provider) => provider.providerId === "password",
+        ) && !currentUser.emailVerified,
       )
       if (requiresVerification) setScreen("auth")
       else if (route.roomCode) setScreen(userId ? "create" : "auth")
-      else if (!userId && ["home", "create", "watch"].includes(route.screen))
+      else if (
+        !userId &&
+        ["home", "profile", "create", "watch"].includes(route.screen)
+      )
         setScreen("auth")
       else setScreen(route.screen)
     }
@@ -196,15 +237,34 @@ export default function App() {
     return () => window.removeEventListener("popstate", syncRoute)
   }, [userId])
 
-  if (!authReady)
+  const isPublicRoute =
+    initialRoute.screen === "landing" ||
+    initialRoute.screen === "privacy" ||
+    initialRoute.screen === "terms"
+
+  if (!authReady && !isPublicRoute)
     return (
-      <div className="surface-wash flex min-h-[100dvh] flex-col items-center justify-center gap-5 px-6 text-center text-ink" role="status" aria-live="polite">
-        <span className="liquid-logo-mark liquid-logo-mark-lg" aria-hidden="true"><span /></span>
+      <div
+        className="surface-wash flex min-h-[100dvh] flex-col items-center justify-center gap-5 px-6 text-center text-ink"
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className="liquid-logo-mark liquid-logo-mark-lg"
+          aria-hidden="true"
+        >
+          <span />
+        </span>
         <div>
           <p className="display-serif text-3xl">A moment, together.</p>
-          <p className="mt-2 text-sm text-muted-ink">Getting your Datecue space ready…</p>
+          <p className="mt-2 text-sm text-muted-ink">
+            Getting your Datecue space ready…
+          </p>
         </div>
-        <span className="loading-shimmer h-1 w-36 rounded-full" aria-hidden="true" />
+        <span
+          className="loading-shimmer h-1 w-36 rounded-full"
+          aria-hidden="true"
+        />
       </div>
     )
 
@@ -218,18 +278,19 @@ export default function App() {
     const currentUser = auth.currentUser
     const verified = Boolean(
       userId &&
-      (!currentUser?.providerData.some((provider) => provider.providerId === "password") ||
-        currentUser.emailVerified),
+        (!currentUser?.providerData.some(
+          (provider) => provider.providerId === "password",
+        ) ||
+          currentUser.emailVerified),
     )
     setNextAfterAuth(verified ? null : "create")
     navigate(verified ? "create" : "auth")
   }
 
   return (
-    <AppErrorBoundary>
-      <div className={darkMode ? "dark" : ""}>
-        <LiquidBackdrop />
-        <div className="app-content">
+    <div className={darkMode ? "dark" : ""}>
+      <LiquidBackdrop />
+      <div className="app-content">
           {screen === "landing" && (
             <LandingPage
               {...theme}
@@ -238,9 +299,27 @@ export default function App() {
               onLegal={openLegal}
             />
           )}
+          {screen === "profile" && userId && (
+            <ProfilePage
+              {...theme}
+              userId={userId}
+              email={auth.currentUser?.email ?? ""}
+              onBack={() => navigate("home")}
+              onLogout={async () => {
+                await signOut(auth)
+                navigate("landing")
+              }}
+              onAccountDeleted={async () => {
+                await signOut(auth)
+                navigate("landing")
+              }}
+              onLegal={openLegal}
+            />
+          )}
           {(screen === "privacy" || screen === "terms") && (
             <LegalPage
               document={screen}
+              {...theme}
               onBack={() => navigate(legalReturnScreen)}
               onNavigate={openLegal}
             />
@@ -269,6 +348,7 @@ export default function App() {
             <HomePage
               {...theme}
               userId={userId}
+              onProfile={() => navigate("profile")}
               onCreate={() => {
                 setPendingMovieUrl("")
                 setPendingRoomCode("")
@@ -326,6 +406,5 @@ export default function App() {
           )}
         </div>
       </div>
-    </AppErrorBoundary>
   )
 }

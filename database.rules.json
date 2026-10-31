@@ -10,7 +10,7 @@
         ".validate": "newData.hasChildren(['displayName', 'updatedAt']) && newData.child('displayName').isString() && newData.child('displayName').val().length >= 2 && newData.child('displayName').val().length <= 40 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && (!newData.child('bio').exists() || (newData.child('bio').isString() && newData.child('bio').val().length <= 160))"
         },
         "legalAcceptance": {
-          ".validate": "newData.hasChildren(['termsVersion', 'privacyVersion', 'acceptedAt']) && newData.child('termsVersion').val() == '2026-10-26' && newData.child('privacyVersion').val() == '2026-10-26' && newData.child('acceptedAt').isNumber() && newData.child('acceptedAt').val() <= now + 60000"
+          ".validate": "newData.hasChildren(['termsVersion', 'privacyVersion', 'acceptedAt']) && newData.child('termsVersion').val() == '2026-10-31' && newData.child('privacyVersion').val() == '2026-10-31' && newData.child('acceptedAt').isNumber() && newData.child('acceptedAt').val() <= now + 60000"
         },
         "stats": {
           ".validate": "newData.hasChildren(['watchSeconds']) && newData.child('watchSeconds').isNumber() && newData.child('watchSeconds').val() >= 0 && newData.child('watchSeconds').val() <= 315360000"
@@ -24,6 +24,11 @@
           "$notificationId": {
             ".write": "auth != null && auth.token.email_verified == true && (auth.uid == $uid || (newData.child('roomId').isString() && (root.child('rooms').child(newData.child('roomId').val()).child('hostId').val() == auth.uid || root.child('rooms').child(newData.child('roomId').val()).child('guestSeat').val() == auth.uid) && (root.child('rooms').child(newData.child('roomId').val()).child('hostId').val() == $uid || root.child('rooms').child(newData.child('roomId').val()).child('guestSeat').val() == $uid)))",
             ".validate": "newData.hasChildren(['title', 'body', 'createdAt']) && newData.child('title').isString() && newData.child('title').val().length > 0 && newData.child('title').val().length <= 120 && newData.child('body').isString() && newData.child('body').val().length <= 500 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
+          }
+        },
+        "notificationTokens": {
+          "$tokenId": {
+            ".validate": "newData.hasChildren(['token', 'createdAt']) && newData.child('token').isString() && newData.child('token').val().length > 0 && newData.child('token').val().length <= 4096 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
           }
         }
       }

@@ -2,7 +2,16 @@ import { useEffect, useState } from "react"
 import { onValue, ref } from "firebase/database"
 import { formatDuration, realtimeDatabase } from "../lib/firebase"
 import { joinRoom } from "../lib/rooms"
-import { clearNotification, createNotification, markNotificationAsRead } from "../lib/notifications"
+import {
+  clearNotification,
+  createNotification,
+  markNotificationAsRead,
+} from "../lib/notifications"
+import {
+  disableBrowserNotifications,
+  enableBrowserNotifications,
+  listenForBrowserNotifications,
+} from "../lib/browserNotifications"
 import Logo, { Icon } from "../components/Logo"
 import type { LegalDocument } from "./LegalPage"
 
@@ -10,6 +19,7 @@ interface Props {
   userId: string
   darkMode: boolean
   onToggleDark: () => void
+  onProfile: () => void
   onCreate: () => void
   onJoin: () => void
   onOpenRoom: (roomId: string, movieUrl: string) => void
@@ -37,6 +47,7 @@ export default function HomePage({
   userId,
   darkMode,
   onToggleDark,
+  onProfile,
   onCreate,
   onJoin,
   onOpenRoom,
@@ -54,6 +65,38 @@ export default function HomePage({
   const [showNotifications, setShowNotifications] = useState(false)
   const [error, setError] = useState("")
   const [logoutBusy, setLogoutBusy] = useState(false)
+  const [browserAlertsEnabled, setBrowserAlertsEnabled] = useState(
+    () =>
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted" &&
+      window.localStorage.getItem(`datecue-browser-alerts-${userId}`) ===
+        "true",
+  )
+  const [browserAlertsBusy, setBrowserAlertsBusy] = useState(false)
+  const [browserAlertsError, setBrowserAlertsError] = useState("")
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined
+    let cancelled = false
+    void listenForBrowserNotifications((title, body) => {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body })
+      }
+    })
+      .then((stop) => {
+        if (cancelled) stop()
+        else unsubscribe = stop
+      })
+      .catch(() => {
+        setBrowserAlertsError(
+          "Browser notifications could not start. Check your browser settings.",
+        )
+      })
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [])
 
   useEffect(
     () =>
@@ -127,6 +170,37 @@ export default function HomePage({
     }
   }
 
+  const toggleBrowserAlerts = async () => {
+    setBrowserAlertsBusy(true)
+    setBrowserAlertsError("")
+    try {
+      if (browserAlertsEnabled) {
+        await disableBrowserNotifications(userId)
+        window.localStorage.removeItem(`datecue-browser-alerts-${userId}`)
+        setBrowserAlertsEnabled(false)
+      } else {
+        await enableBrowserNotifications(userId)
+        window.localStorage.setItem(`datecue-browser-alerts-${userId}`, "true")
+        setBrowserAlertsEnabled(true)
+      }
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : ""
+      setBrowserAlertsError(
+        code === "PUSH_UNSUPPORTED"
+          ? "This browser does not support web notifications."
+          : code === "PUSH_VAPID_KEY_MISSING"
+            ? "Browser notifications are not configured for this deployment yet."
+            : code === "PUSH_PERMISSION_DENIED"
+              ? "Notifications are blocked in your browser settings."
+              : code === "PUSH_NOT_SIGNED_IN"
+                ? "Your sign-in session expired. Refresh and try again."
+                : "Browser notifications couldn't be updated. Check your connection and retry.",
+      )
+    } finally {
+      setBrowserAlertsBusy(false)
+    }
+  }
+
   const logout = async () => {
     setLogoutBusy(true)
     setError("")
@@ -146,6 +220,13 @@ export default function HomePage({
       <header className="mx-auto flex max-w-6xl items-center justify-between border-b hairline px-5 py-4 sm:px-8">
         <Logo dark={darkMode} />
         <div className="flex items-center gap-2">
+          <button
+            className="button-quiet focus-ring rounded-full border px-3 py-2 text-xs font-bold sm:px-4 sm:text-sm"
+            onClick={onProfile}
+            type="button"
+          >
+            Your profile
+          </button>
           <button
             aria-label={
               darkMode ? "Switch to light mode" : "Switch to dark mode"
@@ -169,9 +250,7 @@ export default function HomePage({
       <main className="page-enter mx-auto max-w-6xl px-5 pb-16 pt-9 sm:px-8 sm:pt-12">
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
-            <p className={`eyebrow ${muted}`}>
-              your datecue home
-            </p>
+            <p className={`eyebrow ${muted}`}>your datecue home</p>
             <h1 className="mt-3 text-4xl sm:text-6xl">
               What are you watching next?
             </h1>
@@ -195,7 +274,10 @@ export default function HomePage({
         </div>
 
         {error && (
-          <div className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-coral/20 bg-coral/10 px-4 py-3 text-sm text-coral sm:flex-row sm:items-center" role="alert">
+          <div
+            className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-coral/20 bg-coral/10 px-4 py-3 text-sm text-coral sm:flex-row sm:items-center"
+            role="alert"
+          >
             <p>{error}</p>
             {loadError && (
               <button
@@ -217,20 +299,41 @@ export default function HomePage({
           aria-label="Your activity"
         >
           <div className="soft-card relative flex min-h-36 flex-col justify-between overflow-hidden rounded-[24px] p-6 sm:p-7">
-            <div aria-hidden="true" className="absolute -right-5 -top-12 h-44 w-44 rounded-full border border-coral/20" />
+            <div
+              aria-hidden="true"
+              className="absolute -right-5 -top-12 h-44 w-44 rounded-full border border-coral/20"
+            />
             <p className={`eyebrow relative ${muted}`}>Time spent together</p>
             <p className="display-serif relative mt-4 text-5xl leading-none sm:text-6xl">
-              {formatDuration(totalSeconds)}
+              {loading ? (
+                <span
+                  className="loading-shimmer inline-block h-12 w-28 rounded-xl align-middle"
+                  aria-label="Loading watch time"
+                />
+              ) : loadError ? (
+                "—"
+              ) : (
+                formatDuration(totalSeconds)
+              )}
             </p>
-            <p className={`relative mt-3 text-sm ${muted}`}>Your shared screen time, saved for you.</p>
+            <p className={`relative mt-3 text-sm ${muted}`}>
+              Your shared screen time, saved for you.
+            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
             <div className="soft-card flex items-center justify-between gap-4 rounded-[22px] px-5 py-4">
               <div>
                 <p className={`eyebrow ${muted}`}>Watch nights</p>
-                <p className="mt-1 text-2xl font-semibold">{roomCount}</p>
+                <p className="mt-1 text-2xl font-semibold">
+                  {loading || loadError ? "—" : roomCount}
+                </p>
               </div>
-              <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-moss/15 text-moss"><Icon name="film" size={19} /></span>
+              <span
+                aria-hidden="true"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-moss/15 text-moss"
+              >
+                <Icon name="film" size={19} />
+              </span>
             </div>
             <button
               aria-expanded={showNotifications}
@@ -240,12 +343,19 @@ export default function HomePage({
             >
               <span>
                 <span className={`eyebrow block ${muted}`}>Notifications</span>
-                <span className="mt-1 block text-2xl font-semibold">{unread}</span>
+                <span className="mt-1 block text-2xl font-semibold">
+                  {loading || loadError ? "—" : unread}
+                </span>
                 <span className={`mt-1 block text-xs ${muted}`}>
                   {showNotifications ? "Close notifications" : "View updates"}
                 </span>
               </span>
-              <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-coral/12 text-coral"><Icon name="message" size={19} /></span>
+              <span
+                aria-hidden="true"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-coral/12 text-coral"
+              >
+                <Icon name="message" size={19} />
+              </span>
             </button>
           </div>
         </section>
@@ -265,7 +375,16 @@ export default function HomePage({
                 Close
               </button>
             </div>
-            {Object.entries(notifications).length === 0 ? (
+            {loading ? (
+              <p className={`mt-4 text-sm ${muted}`} role="status">
+                Loading notifications…
+              </p>
+            ) : loadError ? (
+              <p className={`mt-4 text-sm ${muted}`} role="alert">
+                Notifications couldn’t load. Try again when your connection is
+                back.
+              </p>
+            ) : Object.entries(notifications).length === 0 ? (
               <p className={`mt-4 text-sm ${muted}`}>You’re all caught up.</p>
             ) : (
               <ul className="mt-4 divide-y hairline">
@@ -307,6 +426,31 @@ export default function HomePage({
                   ))}
               </ul>
             )}
+            <div className="mt-4 flex flex-col justify-between gap-3 border-t hairline pt-4 sm:flex-row sm:items-center">
+              <div>
+                <p className="text-sm font-bold">Browser notifications</p>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Get room updates when Datecue is in the background.
+                </p>
+                {browserAlertsError && (
+                  <p className="mt-2 text-sm text-coral" role="alert">
+                    {browserAlertsError}
+                  </p>
+                )}
+              </div>
+              <button
+                className="button-quiet focus-ring shrink-0 rounded-xl border px-4 py-3 text-sm font-bold"
+                disabled={browserAlertsBusy}
+                onClick={() => void toggleBrowserAlerts()}
+                type="button"
+              >
+                {browserAlertsBusy
+                  ? "Updating…"
+                  : browserAlertsEnabled
+                    ? "Turn off alerts"
+                    : "Enable alerts"}
+              </button>
+            </div>
           </section>
         )}
 
@@ -314,17 +458,31 @@ export default function HomePage({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-3xl sm:text-4xl">A few nights to revisit</h2>
             <span className={`text-sm ${muted}`}>
-              {roomCount
-                ? `${roomCount} saved`
-                : "Your watched rooms appear here"}
+              {loadError
+                ? "History unavailable"
+                : loading
+                  ? "Loading your history…"
+                  : roomCount
+                    ? `${roomCount} saved`
+                    : "Your watched rooms appear here"}
             </span>
           </div>
           <div className="mt-4 grid gap-3">
             {loading ? (
-              <div className="space-y-3" role="status" aria-label="Loading recent rooms">
+              <div
+                className="space-y-3"
+                role="status"
+                aria-label="Loading recent rooms"
+              >
                 {[0, 1, 2].map((item) => (
-                  <div className="soft-card flex items-center gap-4 rounded-[22px] p-4" key={item}>
-                    <span className="loading-shimmer h-16 w-28 shrink-0 rounded-[14px]" aria-hidden="true" />
+                  <div
+                    className="soft-card flex items-center gap-4 rounded-[22px] p-4"
+                    key={item}
+                  >
+                    <span
+                      className="loading-shimmer h-16 w-28 shrink-0 rounded-[14px]"
+                      aria-hidden="true"
+                    />
                     <span className="min-w-0 flex-1 space-y-2">
                       <span className="loading-shimmer block h-4 w-2/3 rounded-full" />
                       <span className="loading-shimmer block h-3 w-1/3 rounded-full" />
@@ -332,11 +490,38 @@ export default function HomePage({
                   </div>
                 ))}
               </div>
+            ) : loadError ? (
+              <div className="soft-card rounded-[26px] p-7 sm:p-9">
+                <p className="display-serif text-3xl">
+                  Your history is taking a moment.
+                </p>
+                <p className={`mt-2 text-sm leading-relaxed ${muted}`}>
+                  We couldn’t load your saved rooms, so we haven’t shown an
+                  empty state.
+                </p>
+                <button
+                  className="button-primary focus-ring mt-5 rounded-xl px-4 py-3 text-sm font-bold"
+                  onClick={() => {
+                    setLoading(true)
+                    setLoadAttempt((attempt) => attempt + 1)
+                  }}
+                  type="button"
+                >
+                  Try again
+                </button>
+              </div>
             ) : history.length === 0 ? (
               <div className="soft-card relative overflow-hidden rounded-[26px] p-7 sm:p-9">
-                <div aria-hidden="true" className="absolute -right-8 -top-10 h-48 w-48 rounded-full border border-moss/20" />
-                <p className="display-serif relative text-3xl">Your story starts with a play button.</p>
-                <p className={`relative mt-2 max-w-md text-sm leading-relaxed ${muted}`}>
+                <div
+                  aria-hidden="true"
+                  className="absolute -right-8 -top-10 h-48 w-48 rounded-full border border-moss/20"
+                />
+                <p className="display-serif relative text-3xl">
+                  Your story starts with a play button.
+                </p>
+                <p
+                  className={`relative mt-2 max-w-md text-sm leading-relaxed ${muted}`}
+                >
                   Create a room and invite someone to start your history.
                 </p>
                 <button
@@ -371,7 +556,11 @@ export default function HomePage({
                       {formatDuration(item.watchedSeconds ?? 0)} watched
                     </span>
                   </span>
-                   <Icon className="shrink-0 transition-transform group-hover:translate-x-1" name="arrow-right" size={18} />
+                  <Icon
+                    className="shrink-0 transition-transform group-hover:translate-x-1"
+                    name="arrow-right"
+                    size={18}
+                  />
                 </button>
               ))
             )}
@@ -382,8 +571,20 @@ export default function HomePage({
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 text-sm text-muted-ink">
           <span>Datecue</span>
           <nav aria-label="Legal documents" className="flex gap-4">
-            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("privacy")} type="button">Privacy</button>
-            <button className="focus-ring underline underline-offset-2" onClick={() => onLegal("terms")} type="button">Terms</button>
+            <button
+              className="focus-ring underline underline-offset-2"
+              onClick={() => onLegal("privacy")}
+              type="button"
+            >
+              Privacy
+            </button>
+            <button
+              className="focus-ring underline underline-offset-2"
+              onClick={() => onLegal("terms")}
+              type="button"
+            >
+              Terms
+            </button>
           </nav>
         </div>
       </footer>

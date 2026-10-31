@@ -13,7 +13,12 @@ import {
   update,
 } from "firebase/database"
 import { Icon } from "../components/Logo"
-import { realtimeDatabase, trackAnalyticsEvent, youtubeIdFromUrl } from "../lib/firebase"
+import AccessibleDialog from "../components/AccessibleDialog"
+import {
+  realtimeDatabase,
+  trackAnalyticsEvent,
+  youtubeIdFromUrl,
+} from "../lib/firebase"
 import { createNotification } from "../lib/notifications"
 import { recordWatchSession } from "../lib/rooms"
 import { canonicalYoutubeUrl } from "../lib/youtube"
@@ -113,13 +118,16 @@ export default function WatchRoom({
   const [showReactions, setShowReactions] = useState(false)
   const [videoError, setVideoError] = useState("")
   const [copied, setCopied] = useState(false)
+  const [roomCodeCopied, setRoomCodeCopied] = useState(false)
   const [inviteUrl, setInviteUrl] = useState("")
   const [sendError, setSendError] = useState("")
   const [roomError, setRoomError] = useState("")
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
   const [displayName, setDisplayName] = useState("")
+  const [profileBio, setProfileBio] = useState("")
   const [nameError, setNameError] = useState("")
-  const [participantNames, setParticipantNames] = useState<Record<string, string>>({})
+  const [participantNames, setParticipantNames] =
+    useState<Record<string, string>>({})
   const [nameDraft, setNameDraft] = useState("")
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   const [profilePreview, setProfilePreview] = useState<{
@@ -134,7 +142,10 @@ export default function WatchRoom({
   const [leaving, setLeaving] = useState(false)
   const playerRef = useRef<any>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
-  const publishPlaybackRef = useRef<(playing: boolean, currentTime: number) => Promise<void>>(async () => {})
+  const publishPlaybackRef = useRef<(
+    playing: boolean,
+    currentTime: number,
+  ) => Promise<void>>(async () => {})
   const roomHostRef = useRef<string | null>(null)
   const displayNameRef = useRef(displayName)
   displayNameRef.current = displayName
@@ -182,14 +193,16 @@ export default function WatchRoom({
         const script = document.createElement("script")
         script.src = "https://www.youtube.com/iframe_api"
         script.async = true
-        script.onerror = () => setVideoError("The YouTube player couldn't load. Check your connection and try again.")
+        script.onerror = () =>
+          setVideoError(
+            "The YouTube player couldn't load. Check your connection and try again.",
+          )
         document.head.appendChild(script)
       }
     })
 
     void loadApi.then(() => {
-      if (cancelled || !playerContainerRef.current || !window.YT?.Player)
-        return
+      if (cancelled || !playerContainerRef.current || !window.YT?.Player) return
       const target = document.createElement("div")
       target.className = "h-full w-full"
       playerContainerRef.current.replaceChildren(target)
@@ -243,7 +256,10 @@ export default function WatchRoom({
               101: "The video owner doesn't allow playback in other websites.",
               150: "The video owner doesn't allow playback in other websites.",
             }
-            setVideoError(messages[event.data] || "This YouTube video can't be played here.")
+            setVideoError(
+              messages[event.data] ||
+                "This YouTube video can't be played here.",
+            )
           },
         },
       })
@@ -274,27 +290,38 @@ export default function WatchRoom({
   }, [hostId, playback, playerReady, userId])
 
   useEffect(() => {
-    void getUserProfile(userId).then((profile) => {
-      const name = profile?.displayName?.trim() ?? ""
-      setDisplayName(name)
-      setNameDraft(name)
-      setShowNamePrompt(!name)
-    }).catch(() => setShowNamePrompt(true))
+    void getUserProfile(userId)
+      .then((profile) => {
+        const name = profile?.displayName?.trim() ?? ""
+        setDisplayName(name)
+        setNameDraft(name)
+        setProfileBio(profile?.bio ?? "")
+        setShowNamePrompt(!name)
+      })
+      .catch(() => {
+        setRoomError("Your room profile couldn't load. Check your connection and try again.")
+        setShowNamePrompt(true)
+      })
   }, [userId])
 
   useEffect(() => {
     void trackAnalyticsEvent("watch_session_start")
   }, [roomId])
 
-  useEffect(() => () => {
-    void trackAnalyticsEvent("watch_session_end", {
-      duration_seconds: Math.floor(watchedSecondsRef.current),
-    })
-  }, [roomId])
+  useEffect(
+    () => () => {
+      void trackAnalyticsEvent("watch_session_end", {
+        duration_seconds: Math.floor(watchedSecondsRef.current),
+      })
+    },
+    [roomId],
+  )
 
   useEffect(() => {
     const hostId = roomHostRef.current
-    setHostLeft(Boolean(hostId && hostId !== userId && !presence[hostId]?.online))
+    setHostLeft(
+      Boolean(hostId && hostId !== userId && !presence[hostId]?.online),
+    )
   }, [hostId, presence, userId, playback.hostId])
 
   useEffect(() => {
@@ -310,21 +337,25 @@ export default function WatchRoom({
     if (name.length < 2) return
     setNameError("")
     try {
-      await saveUserProfile(userId, name)
+      await saveUserProfile(userId, name, profileBio)
       setDisplayName(name)
       setShowNamePrompt(false)
     } catch {
-      setNameError("Your name couldn't be saved. Check your connection and retry.")
+      setNameError(
+        "Your name couldn't be saved. Check your connection and retry.",
+      )
     }
   }
 
   useEffect(() => {
     if (!displayName) return
-    void update(
-      ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`),
-      { displayName },
-    ).catch(() => {})
-  }, [displayName, roomId, userId])
+    void update(ref(realtimeDatabase, `rooms/${roomId}/presence/${userId}`), {
+      displayName,
+      bio: profileBio,
+    }).catch(() => {
+      setRoomError("Your room profile couldn't sync. Check the room rules and retry.")
+    })
+  }, [displayName, profileBio, roomId, userId])
 
   const publishPlayback = useCallback(
     async (playing: boolean, currentTime: number) => {
@@ -378,6 +409,7 @@ export default function WatchRoom({
       online: true,
       updatedAt: serverTimestamp(),
       displayName: displayNameRef.current || "Guest",
+      bio: profileBio,
     }).catch(fail)
     void onDisconnect(presenceRef).remove().catch(fail)
     void onDisconnect(typingRef).remove().catch(fail)
@@ -395,7 +427,9 @@ export default function WatchRoom({
         (snap) => {
           if (!snap.exists()) {
             setRoomEnded(true)
-            setRoomError("This room has ended or expired. You can leave and return home.")
+            setRoomError(
+              "This room has ended or expired. You can leave and return home.",
+            )
             return
           }
           setRoomEnded(false)
@@ -505,7 +539,9 @@ export default function WatchRoom({
   useEffect(() => {
     if (!hostId || hostId === userId) return
     const guestSeatRef = ref(realtimeDatabase, `rooms/${roomId}/guestSeat`)
-    void onDisconnect(guestSeatRef).remove().catch(() => {})
+    void onDisconnect(guestSeatRef)
+      .remove()
+      .catch(() => {})
     return () => void onDisconnect(guestSeatRef).cancel()
   }, [hostId, roomId, userId])
 
@@ -546,7 +582,10 @@ export default function WatchRoom({
       setVideoTime(currentTime)
       setVideoDuration(player.getDuration?.() || 0)
       if (playing && lastWatchTickRef.current) {
-        watchedSecondsRef.current += Math.min(1.5, (now - lastWatchTickRef.current) / 1000)
+        watchedSecondsRef.current += Math.min(
+          1.5,
+          (now - lastWatchTickRef.current) / 1000,
+        )
       }
       lastWatchTickRef.current = playing ? now : 0
       isPlayingRef.current = playing
@@ -558,7 +597,8 @@ export default function WatchRoom({
             (playback.playing
               ? Math.max(0, now - playback.updatedAt) / 1000
               : 0)
-          if (Math.abs(target - currentTime) > 1.5) player.seekTo?.(target, true)
+          if (Math.abs(target - currentTime) > 1.5)
+            player.seekTo?.(target, true)
           if (playback.playing && !playing) player.playVideo?.()
           else if (!playback.playing && playing) player.pauseVideo?.()
         }
@@ -584,28 +624,14 @@ export default function WatchRoom({
     messageEndRef.current?.scrollIntoView({ block: "end" })
   }, [messages[messages.length - 1]?.id])
 
-  useEffect(() => {
-    if (!inviteUrl) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setInviteUrl("")
-    }
-    window.addEventListener("keydown", closeOnEscape)
-    return () => window.removeEventListener("keydown", closeOnEscape)
-  }, [inviteUrl])
-
-  useEffect(() => {
-    if (!profilePreview) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setProfilePreview(null)
-    }
-    window.addEventListener("keydown", closeOnEscape)
-    return () => window.removeEventListener("keydown", closeOnEscape)
-  }, [profilePreview])
-
   const syncNow = () => {
     const player = playerRef.current
     if (!player || !playback.updatedAt) return
-    const target = (playback.currentTime ?? 0) + (playback.playing ? Math.max(0, Date.now() - playback.updatedAt) / 1000 : 0)
+    const target =
+      (playback.currentTime ?? 0) +
+      (playback.playing
+        ? Math.max(0, Date.now() - playback.updatedAt) / 1000
+        : 0)
     player.seekTo?.(target, true)
     playback.playing ? player.playVideo?.() : player.pauseVideo?.()
   }
@@ -626,10 +652,13 @@ export default function WatchRoom({
       await remove(ref(realtimeDatabase, `rooms/${roomId}/guestSeat`))
       roomHostRef.current = userId
       setHostLeft(false)
-      const currentTime = playerRef.current?.getCurrentTime?.() ?? playback.currentTime ?? 0
+      const currentTime =
+        playerRef.current?.getCurrentTime?.() ?? playback.currentTime ?? 0
       void publishPlayback(Boolean(playback.playing), currentTime)
     } catch {
-      setRoomError("Could not take control yet. Check your connection and try again.")
+      setRoomError(
+        "Could not take control yet. Check your connection and try again.",
+      )
     }
   }
 
@@ -646,8 +675,11 @@ export default function WatchRoom({
     try {
       let title = "YouTube video"
       try {
-        const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(nextUrl)}&format=json`)
-        if (response.ok) title = String((await response.json()).title || title).slice(0, 120)
+        const response = await fetch(
+          `https://www.youtube.com/oembed?url=${encodeURIComponent(nextUrl)}&format=json`,
+        )
+        if (response.ok)
+          title = String((await response.json()).title || title).slice(0, 120)
       } catch {
         // Keep video changes available when YouTube metadata is unavailable.
       }
@@ -668,7 +700,9 @@ export default function WatchRoom({
       void trackAnalyticsEvent("room_video_changed")
       setVideoDraft("")
     } catch {
-      setSendError("The video couldn't be changed. Check the room rules and try again.")
+      setSendError(
+        "The video couldn't be changed. Check the room rules and try again.",
+      )
     } finally {
       setChangingVideo(false)
     }
@@ -733,6 +767,8 @@ export default function WatchRoom({
     const shareUrl = `${window.location.origin}${window.location.pathname}#/room/${roomId}`
     setInviteUrl(shareUrl)
     setCopied(false)
+    setRoomCodeCopied(false)
+    setSendError("")
     try {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
@@ -757,6 +793,24 @@ export default function WatchRoom({
     }
   }
 
+  const copyRoomCode = async () => {
+    if (!navigator.clipboard?.writeText) {
+      setSendError(
+        "Copy isn't available here. Select the room code and copy it.",
+      )
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(roomId)
+      setRoomCodeCopied(true)
+      setSendError("")
+    } catch {
+      setSendError(
+        "Copy isn't available here. Select the room code and copy it.",
+      )
+    }
+  }
+
   const shareInvite = async () => {
     if (!navigator.share) {
       await copyInvite()
@@ -777,7 +831,12 @@ export default function WatchRoom({
 
   const endRoom = async () => {
     if (hostId !== userId || leaving) return
-    if (!window.confirm("End this room for everyone? Your watch time will be saved.")) return
+    if (
+      !window.confirm(
+        "End this room for everyone? Your watch time will be saved.",
+      )
+    )
+      return
     setLeaving(true)
     try {
       await recordWatchSession(
@@ -797,7 +856,9 @@ export default function WatchRoom({
       ])
       onLeave()
     } catch {
-      setRoomError("The room could not be ended. Check your connection and try again.")
+      setRoomError(
+        "The room could not be ended. Check your connection and try again.",
+      )
       setLeaving(false)
     }
   }
@@ -811,7 +872,8 @@ export default function WatchRoom({
     if (
       watchedSecondsRef.current >= 5 * 60 &&
       !window.confirm("Leave and save your watch time for this room?")
-    ) return
+    )
+      return
     setLeaving(true)
     setSendError("")
     try {
@@ -826,7 +888,9 @@ export default function WatchRoom({
         )
       }
       if (hostId !== userId) {
-        await onDisconnect(ref(realtimeDatabase, `rooms/${roomId}/guestSeat`)).cancel()
+        await onDisconnect(
+          ref(realtimeDatabase, `rooms/${roomId}/guestSeat`),
+        ).cancel()
       }
       const roomChanges: Record<string, null> = {
         [`presence/${userId}`]: null,
@@ -843,8 +907,16 @@ export default function WatchRoom({
   }
 
   const latestReactions = useMemo(() => reactions.slice(-12), [reactions])
-  const initials = (name: string) => name.trim().split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "G"
-  const avatarColor = (uid: string) => ["bg-coral", "bg-moss", "bg-navy", "bg-[#9b6b43]"][uid.charCodeAt(0) % 4]
+  const initials = (name: string) =>
+    name
+      .trim()
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "G"
+  const avatarColor = (uid: string) =>
+    ["bg-coral", "bg-moss", "bg-navy", "bg-[#9b6b43]"][uid.charCodeAt(0) % 4]
 
   return (
     <div className={`min-h-[100dvh] ${surface}`}>
@@ -904,7 +976,9 @@ export default function WatchRoom({
                 <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-ivory/30 text-3xl">
                   !
                 </div>
-                <p className="font-semibold">{videoError || "This YouTube video can't be played here."}</p>
+                <p className="font-semibold">
+                  {videoError || "This YouTube video can't be played here."}
+                </p>
                 <a
                   className="focus-ring text-coral-light underline"
                   href={roomMovieUrl}
@@ -931,11 +1005,20 @@ export default function WatchRoom({
           {hostId !== userId && !hostLeft && (
             <div className="absolute left-4 right-4 top-14 z-20 flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-navy/90 px-3 py-2 text-xs text-ivory shadow-lg">
               <span>Guest mode · playback follows the host</span>
-              <button className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10" onClick={syncNow} type="button">Sync now</button>
+              <button
+                className="rounded-full border border-white/30 px-3 py-1 font-bold hover:bg-white/10"
+                onClick={syncNow}
+                type="button"
+              >
+                Sync now
+              </button>
             </div>
           )}
           {hostId !== userId && videoId && !videoError && (
-            <div className="absolute inset-0 z-10" aria-label="Guest playback is controlled by the host" />
+            <div
+              className="absolute inset-0 z-10"
+              aria-label="Guest playback is controlled by the host"
+            />
           )}
           {hostId === userId && playerReady && (
             <div className="absolute bottom-4 left-4 right-20 z-20 flex items-center gap-2 rounded-xl bg-black/75 px-3 py-2 text-xs text-white">
@@ -950,7 +1033,9 @@ export default function WatchRoom({
               >
                 <Icon name={isPlaying ? "pause" : "play"} size={14} />
               </button>
-              <span className="mono shrink-0">{formatVideoTime(videoTime)}</span>
+              <span className="mono shrink-0">
+                {formatVideoTime(videoTime)}
+              </span>
               <input
                 aria-label="Seek video"
                 className="min-w-0 flex-1 accent-[#d86856]"
@@ -964,13 +1049,21 @@ export default function WatchRoom({
                 type="range"
                 value={Math.min(videoTime, videoDuration || videoTime)}
               />
-              <span className="mono shrink-0">{formatVideoTime(videoDuration)}</span>
+              <span className="mono shrink-0">
+                {formatVideoTime(videoDuration)}
+              </span>
             </div>
           )}
           {hostLeft && (
             <div className="absolute left-4 right-4 top-16 z-20 flex items-center justify-between gap-3 rounded-2xl bg-coral px-4 py-3 text-sm text-ivory shadow-lg">
               <span>Host left — take control?</span>
-              <button className="rounded-full bg-ivory px-3 py-1 font-bold text-ink" onClick={() => void takeControl()} type="button">Take control</button>
+              <button
+                className="rounded-full bg-ivory px-3 py-1 font-bold text-ink"
+                onClick={() => void takeControl()}
+                type="button"
+              >
+                Take control
+              </button>
             </div>
           )}
           <div className="absolute bottom-4 right-4 z-10">
@@ -1019,8 +1112,16 @@ export default function WatchRoom({
           {roomEnded && (
             <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center text-ivory">
               <h2 className="text-2xl">This room has ended</h2>
-              <p className="text-sm text-ivory/70">Your saved watch history is still available from home.</p>
-              <button className="button-primary focus-ring rounded-lg px-4 py-2 font-bold" onClick={onLeave} type="button">Return home</button>
+              <p className="text-sm text-ivory/70">
+                Your saved watch history is still available from home.
+              </p>
+              <button
+                className="button-primary focus-ring rounded-lg px-4 py-2 font-bold"
+                onClick={onLeave}
+                type="button"
+              >
+                Return home
+              </button>
             </div>
           )}
         </section>
@@ -1028,36 +1129,50 @@ export default function WatchRoom({
         <aside className="flex w-full flex-col border-t hairline lg:w-[380px] lg:border-l lg:border-t-0">
           <div className="border-b hairline px-5 py-4">
             <h1 className="display-serif text-2xl">The conversation</h1>
-            <p className="mt-1 truncate text-sm font-semibold" title={roomTitle}>{roomTitle}</p>
+            <p
+              className="mt-1 truncate text-sm font-semibold"
+              title={roomTitle}
+            >
+              {roomTitle}
+            </p>
             <p className="text-sm text-muted-ink" aria-live="polite">
               {onlineCount < 2
                 ? "Waiting for another person to join"
                 : `${onlineCount} people are watching`}
             </p>
             <div className="mt-3 flex items-center gap-2">
-              {Object.entries(presence).slice(0, 2).map(([uid, person]) => (
-                <button
-                  key={uid}
-                  className={`focus-ring flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold text-ivory ring-2 ring-paper transition hover:scale-105 ${avatarColor(uid)}`}
-                  title={`View ${person.displayName || "Guest"}'s room profile`}
-                  aria-label={`View ${person.displayName || "Guest"}'s room profile`}
-                  onClick={() => setProfilePreview({
-                    uid,
-                    name: person.displayName || "Guest",
-                    online: Boolean(person.online),
-                    bio: person.bio,
-                  })}
-                  type="button"
-                >
-                  {initials(person.displayName || "Guest")}
-                </button>
-              ))}
+              {Object.entries(presence)
+                .slice(0, 2)
+                .map(([uid, person]) => (
+                  <button
+                    key={uid}
+                    className={`focus-ring flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold text-ivory ring-2 ring-paper transition hover:scale-105 ${avatarColor(uid)}`}
+                    title={`View ${person.displayName || "Guest"}'s room profile`}
+                    aria-label={`View ${person.displayName || "Guest"}'s room profile`}
+                    onClick={() =>
+                      setProfilePreview({
+                        uid,
+                        name: person.displayName || "Guest",
+                        online: Boolean(person.online),
+                        bio: person.bio,
+                      })
+                    }
+                    type="button"
+                  >
+                    {initials(person.displayName || "Guest")}
+                  </button>
+                ))}
               <span className="text-xs text-muted-ink">
-                {Object.values(presence).map((person) => person.displayName || "Guest").join(" · ")}
+                {Object.values(presence)
+                  .map((person) => person.displayName || "Guest")
+                  .join(" · ")}
               </span>
             </div>
             {hostId === userId && (
-              <form className="mt-4 flex gap-2" onSubmit={(event) => void changeVideo(event)}>
+              <form
+                className="mt-4 flex gap-2"
+                onSubmit={(event) => void changeVideo(event)}
+              >
                 <input
                   aria-label="Change the room video"
                   className="input-field focus-ring min-w-0 rounded-lg px-3 py-2 text-xs"
@@ -1067,7 +1182,11 @@ export default function WatchRoom({
                   type="url"
                   value={videoDraft}
                 />
-                <button className="button-quiet focus-ring shrink-0 rounded-lg border px-3 py-2 text-xs font-bold" disabled={changingVideo || !videoDraft.trim()} type="submit">
+                <button
+                  className="button-quiet focus-ring shrink-0 rounded-lg border px-3 py-2 text-xs font-bold"
+                  disabled={changingVideo || !videoDraft.trim()}
+                  type="submit"
+                >
                   {changingVideo ? "Changing…" : "Change"}
                 </button>
               </form>
@@ -1100,53 +1219,82 @@ export default function WatchRoom({
               </p>
             ) : (
               messages.map((message) => (
-                  <div key={message.id} className={`flex max-w-[92%] items-end gap-2 ${message.uid === userId ? "ml-auto flex-row-reverse" : ""}`}>
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-ivory ${avatarColor(message.uid)}`} aria-hidden="true">
-                      {initials(message.uid === userId ? displayName : message.senderName || participantNames[message.uid] || "Guest")}
-                    </span>
-                    <div
-                    className={`break-words rounded-2xl px-3 py-2 text-sm ${
-                    message.uid === userId
-                      ? "ml-auto bg-coral text-ivory"
-                      : "bg-sand/60"
+                <div
+                  key={message.id}
+                  className={`flex max-w-[92%] items-end gap-2 ${
+                    message.uid === userId ? "ml-auto flex-row-reverse" : ""
                   }`}
+                >
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-ivory ${avatarColor(message.uid)}`}
+                    aria-hidden="true"
                   >
-                  <span className="mb-1 block text-[10px] font-bold opacity-70">
-                    {message.uid === userId ? "You" : message.senderName || participantNames[message.uid] || "Guest"}
-                  </span>
-                  {message.text}
-                  <span className="mt-1 flex items-center gap-2 text-[10px] opacity-70">
-                    {new Date(message.createdAt).toLocaleTimeString([], {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                    {typeof message.videoTime === "number" && (
-                      message.videoId === videoId ? (
-                        <button
-                          className="underline underline-offset-2"
-                          onClick={() => {
-                            if (hostId === userId) playerRef.current?.seekTo?.(message.videoTime, true)
-                            else syncNow()
-                          }}
-                          title={hostId === userId ? "Jump to this moment" : "Sync with the host"}
-                          type="button"
-                        >
-                          {formatVideoTime(message.videoTime)}
-                        </button>
-                      ) : (
-                        <span title="Timestamp from a different room video">
-                          {formatVideoTime(message.videoTime)}
-                        </span>
-                      )
+                    {initials(
+                      message.uid === userId
+                        ? displayName
+                        : message.senderName ||
+                            participantNames[message.uid] ||
+                            "Guest",
                     )}
                   </span>
-                    </div>
+                  <div
+                    className={`break-words rounded-2xl px-3 py-2 text-sm ${
+                      message.uid === userId
+                        ? "ml-auto bg-coral text-ivory"
+                        : "bg-sand/60"
+                    }`}
+                  >
+                    <span className="mb-1 block text-[10px] font-bold opacity-70">
+                      {message.uid === userId
+                        ? "You"
+                        : message.senderName ||
+                          participantNames[message.uid] ||
+                          "Guest"}
+                    </span>
+                    {message.text}
+                    <span className="mt-1 flex items-center gap-2 text-[10px] opacity-70">
+                      {new Date(message.createdAt).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                      {typeof message.videoTime === "number" &&
+                        (message.videoId === videoId ? (
+                          <button
+                            className="underline underline-offset-2"
+                            onClick={() => {
+                              if (hostId === userId)
+                                playerRef.current?.seekTo?.(
+                                  message.videoTime,
+                                  true,
+                                )
+                              else syncNow()
+                            }}
+                            title={
+                              hostId === userId
+                                ? "Jump to this moment"
+                                : "Sync with the host"
+                            }
+                            type="button"
+                          >
+                            {formatVideoTime(message.videoTime)}
+                          </button>
+                        ) : (
+                          <span title="Timestamp from a different room video">
+                            {formatVideoTime(message.videoTime)}
+                          </span>
+                        ))}
+                    </span>
                   </div>
-                ))
+                </div>
+              ))
             )}
-            {Object.entries(typingUsers).some(([uid, typing]) => uid !== userId && typing) && (
+            {Object.entries(typingUsers).some(
+              ([uid, typing]) => uid !== userId && typing,
+            ) && (
               <p className="px-2 text-xs italic text-muted-ink" role="status">
-                {Object.entries(typingUsers).find(([uid, typing]) => uid !== userId && typing)?.[0] &&
+                {Object.entries(typingUsers).find(
+                  ([uid, typing]) => uid !== userId && typing,
+                )?.[0] &&
                   `${presence[Object.entries(typingUsers).find(([uid, typing]) => uid !== userId && typing)![0]]?.displayName || "Someone"} is typing…`}
               </p>
             )}
@@ -1161,9 +1309,16 @@ export default function WatchRoom({
                 onChange={(event) => {
                   const next = event.target.value
                   setText(next)
-                  void set(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`), Boolean(next.trim()))
+                  void set(
+                    ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
+                    Boolean(next.trim()),
+                  )
                 }}
-                onBlur={() => void remove(ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`))}
+                onBlur={() =>
+                  void remove(
+                    ref(realtimeDatabase, `rooms/${roomId}/typing/${userId}`),
+                  )
+                }
                 onKeyDown={(event) => {
                   if (
                     event.key === "Enter" &&
@@ -1191,124 +1346,167 @@ export default function WatchRoom({
       </main>
 
       {showNamePrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5" role="dialog" aria-modal="true" aria-labelledby="name-title">
-          <section className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl">
-            <p className="mono text-xs uppercase tracking-[.16em] text-coral">One small thing</p>
-            <h2 className="mt-3 text-3xl" id="name-title">What should they call you?</h2>
-            <p className="mt-2 text-sm text-muted-ink">Your name appears beside messages and in the room.</p>
-            <input className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3" autoFocus maxLength={40} minLength={2} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Display name" />
-            {nameError && <p className="mt-2 text-sm text-coral" role="alert">{nameError}</p>}
-            <button className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold" disabled={nameDraft.trim().length < 2} onClick={() => void saveName()} type="button">Save name</button>
-          </section>
-        </div>
+        <AccessibleDialog
+          labelledBy="name-title"
+          onClose={() => {}}
+          closeOnEscape={false}
+          closeOnBackdropClick={false}
+        >
+          <p className="mono text-xs uppercase tracking-[.16em] text-coral">
+            One small thing
+          </p>
+          <h2 className="mt-3 text-3xl" id="name-title">
+            What should they call you?
+          </h2>
+          <p className="mt-2 text-sm text-muted-ink">
+            Your name appears beside messages and in the room.
+          </p>
+          <input
+            className="input-field focus-ring mt-5 w-full rounded-xl px-4 py-3"
+            autoFocus
+            maxLength={40}
+            minLength={2}
+            value={nameDraft}
+            onChange={(event) => setNameDraft(event.target.value)}
+            placeholder="Display name"
+          />
+          {nameError && (
+            <p className="mt-2 text-sm text-coral" role="alert">
+              {nameError}
+            </p>
+          )}
+          <button
+            className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold"
+            disabled={nameDraft.trim().length < 2}
+            onClick={() => void saveName()}
+            type="button"
+          >
+            Save name
+          </button>
+        </AccessibleDialog>
       )}
 
       {profilePreview && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-navy/50 p-4 backdrop-blur-sm sm:items-center"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setProfilePreview(null)
-          }}
+        <AccessibleDialog
+          labelledBy="participant-profile-title"
+          onClose={() => setProfilePreview(null)}
+          dialogClassName="soft-card page-enter w-full max-w-sm rounded-[26px] p-6 shadow-2xl"
         >
-          <section
-            aria-labelledby="participant-profile-title"
-            aria-modal="true"
-            className="soft-card page-enter w-full max-w-sm rounded-[26px] p-6 shadow-2xl"
-            role="dialog"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-ivory ${avatarColor(profilePreview.uid)}`} aria-hidden="true">
-                  {initials(profilePreview.name)}
-                </span>
-                <div>
-                  <p className="eyebrow text-coral">Room profile</p>
-                  <h2 className="mt-1 text-2xl" id="participant-profile-title">{profilePreview.name}</h2>
-                </div>
-              </div>
-              <button
-                aria-label="Close participant profile"
-                className="button-quiet focus-ring flex h-9 w-9 items-center justify-center rounded-full border"
-                onClick={() => setProfilePreview(null)}
-                type="button"
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span
+                className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-ivory ${avatarColor(profilePreview.uid)}`}
+                aria-hidden="true"
               >
-                <Icon name="close" size={16} />
-              </button>
+                {initials(profilePreview.name)}
+              </span>
+              <div>
+                <p className="eyebrow text-coral">Room profile</p>
+                <h2 className="mt-1 text-2xl" id="participant-profile-title">
+                  {profilePreview.name}
+                </h2>
+              </div>
             </div>
-            <p className="mt-5 flex items-center gap-2 text-sm text-muted-ink">
-              <span className={`h-2 w-2 rounded-full ${profilePreview.online ? "bg-moss" : "bg-ochre"}`} />
-              {profilePreview.online ? "Here in the room" : "Away from the room"}
-            </p>
-            {profilePreview.bio && (
-              <p className="mt-4 text-sm leading-relaxed">{profilePreview.bio}</p>
-            )}
-            <p className="mt-4 border-t hairline pt-4 text-sm leading-relaxed text-muted-ink">
-              Only details shared in this room appear here. Personal watch history and private account details stay private.
-            </p>
-          </section>
-        </div>
+            <button
+              aria-label="Close participant profile"
+              className="button-quiet focus-ring flex h-9 w-9 items-center justify-center rounded-full border"
+              onClick={() => setProfilePreview(null)}
+              type="button"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <p className="mt-5 flex items-center gap-2 text-sm text-muted-ink">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                profilePreview.online ? "bg-moss" : "bg-ochre"
+              }`}
+            />
+            {profilePreview.online ? "Here in the room" : "Away from the room"}
+          </p>
+          {profilePreview.bio && (
+            <p className="mt-4 text-sm leading-relaxed">{profilePreview.bio}</p>
+          )}
+          <p className="mt-4 border-t hairline pt-4 text-sm leading-relaxed text-muted-ink">
+            Only details shared in this room appear here. Personal watch history
+            and private account details stay private.
+          </p>
+        </AccessibleDialog>
       )}
 
       {inviteUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setInviteUrl("")
-          }}
+        <AccessibleDialog
+          labelledBy="invite-title"
+          onClose={() => setInviteUrl("")}
         >
-          <section
-            aria-labelledby="invite-title"
-            aria-modal="true"
-            className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl"
-            role="dialog"
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-2xl" id="invite-title">
+              Invite someone in
+            </h2>
+            <button
+              aria-label="Close invite dialog"
+              className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border"
+              onClick={() => setInviteUrl("")}
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <p className="mt-2 text-sm text-muted-ink">
+            Share this link. Your guest will be taken to the room code.
+          </p>
+          <input
+            autoFocus
+            className="input-field focus-ring mt-5 rounded-xl px-3 py-3 text-sm"
+            onFocus={(event) => event.currentTarget.select()}
+            readOnly
+            value={inviteUrl}
+            aria-label="Room invite link"
+          />
+          <button
+            className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold"
+            onClick={() => void copyInvite()}
+            type="button"
           >
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-2xl" id="invite-title">
-                Invite someone in
-              </h2>
-              <button
-                aria-label="Close invite dialog"
-                className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border"
-                onClick={() => setInviteUrl("")}
-                type="button"
-              >
-                ×
-              </button>
-            </div>
-            <p className="mt-2 text-sm text-muted-ink">
-              Share this link. Your guest will be taken to the room code.
-            </p>
+            {copied ? "Link copied" : "Copy invite link"}
+          </button>
+          <label
+            className="mt-5 block text-xs font-bold uppercase tracking-[.12em] text-muted-ink"
+            htmlFor="room-code-copy"
+          >
+            Or share just the room code
+          </label>
+          <div className="mt-2 flex gap-2">
             <input
-              autoFocus
-              className="input-field focus-ring mt-5 rounded-xl px-3 py-3 text-sm"
+              autoComplete="off"
+              className="input-field focus-ring min-w-0 flex-1 rounded-xl px-3 py-3 text-center font-mono font-bold tracking-[.2em]"
+              id="room-code-copy"
               onFocus={(event) => event.currentTarget.select()}
               readOnly
-              value={inviteUrl}
-              aria-label="Room invite link"
+              value={roomId}
             />
             <button
-              className="button-primary focus-ring mt-4 w-full rounded-xl px-4 py-3 font-bold"
-              onClick={() => void copyInvite()}
+              aria-live="polite"
+              className="button-quiet focus-ring shrink-0 rounded-xl border px-4 py-3 text-sm font-bold"
+              onClick={() => void copyRoomCode()}
               type="button"
             >
-              {copied ? "Link copied" : "Copy invite link"}
+              {roomCodeCopied ? "Copied" : "Copy code"}
             </button>
-            <button
-              className="button-quiet focus-ring mt-2 w-full rounded-xl border px-4 py-3 font-bold"
-              onClick={() => void shareInvite()}
-              type="button"
-            >
-              Share invite…
-            </button>
-            {sendError && (
-              <p className="mt-3 text-sm text-coral" role="alert">
-                {sendError}
-              </p>
-            )}
-          </section>
-        </div>
+          </div>
+          <button
+            className="button-quiet focus-ring mt-2 w-full rounded-xl border px-4 py-3 font-bold"
+            onClick={() => void shareInvite()}
+            type="button"
+          >
+            Share invite…
+          </button>
+          {sendError && (
+            <p className="mt-3 text-sm text-coral" role="alert">
+              {sendError}
+            </p>
+          )}
+        </AccessibleDialog>
       )}
     </div>
   )

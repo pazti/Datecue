@@ -9,7 +9,11 @@ import {
 } from "firebase/auth"
 import Logo, { Icon } from "../components/Logo"
 import { auth } from "../lib/firebase"
-import { recordLegalAcceptance, saveUserProfile } from "../lib/rooms"
+import {
+  getUserProfile,
+  recordLegalAcceptance,
+  saveUserProfile,
+} from "../lib/rooms"
 import { LEGAL_VERSION, type LegalDocument } from "./LegalPage"
 
 interface Props {
@@ -36,6 +40,7 @@ export default function AuthPage({
   const [verificationSent, setVerificationSent] = useState(false)
   const [verificationRequired, setVerificationRequired] = useState(false)
   const [profileNeedsSaving, setProfileNeedsSaving] = useState(false)
+  const [googleNameRequired, setGoogleNameRequired] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [busy, setBusy] = useState(false)
   const surface = darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
@@ -52,11 +57,16 @@ export default function AuthPage({
     setBusy(true)
     try {
       if (mode === "login") {
-        await signInWithEmailAndPassword(auth, email.trim(), password)
-        if (auth.currentUser && !auth.currentUser.emailVerified) {
+        const credential = await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        )
+        await credential.user.reload()
+        await credential.user.getIdToken(true)
+        if (!credential.user.emailVerified) {
           setVerificationRequired(true)
-          await sendEmailVerification(auth.currentUser)
-          setVerificationSent(true)
+          setVerificationSent(false)
           return
         }
       } else {
@@ -64,7 +74,11 @@ export default function AuthPage({
           setError("Choose a display name with at least 2 characters.")
           return
         }
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        )
         setProfileNeedsSaving(true)
         setVerificationRequired(true)
         await sendEmailVerification(credential.user)
@@ -104,7 +118,9 @@ export default function AuthPage({
     try {
       await auth.currentUser?.reload()
       if (!auth.currentUser?.emailVerified) {
-        setError("Your email is not verified yet. Open the link in your inbox and try again.")
+        setError(
+          "Your email is not verified yet. Open the link in your inbox and try again.",
+        )
         return
       }
       await auth.currentUser.getIdToken(true)
@@ -115,7 +131,9 @@ export default function AuthPage({
       await recordLegalAcceptance(auth.currentUser.uid, LEGAL_VERSION)
       onSuccess()
     } catch {
-      setError("We couldn't check verification yet. Check your connection and retry.")
+      setError(
+        "We couldn't check verification yet. Check your connection and retry.",
+      )
     } finally {
       setBusy(false)
     }
@@ -129,7 +147,9 @@ export default function AuthPage({
       await sendEmailVerification(auth.currentUser)
       setVerificationSent(true)
     } catch {
-      setError("We couldn't resend the verification link. Wait a moment and retry.")
+      setError(
+        "We couldn't resend the verification link. Wait a moment and retry.",
+      )
     } finally {
       setBusy(false)
     }
@@ -144,16 +164,51 @@ export default function AuthPage({
     setBusy(true)
     try {
       const credential = await signInWithPopup(auth, new GoogleAuthProvider())
-      const profile = await saveUserProfile(
-        credential.user.uid,
-        credential.user.displayName || displayName || "Datecue guest",
-      )
-      void profile
+      const savedProfile = await getUserProfile(credential.user.uid)
+      const googleDisplayName =
+        credential.user.displayName?.trim() || savedProfile?.displayName?.trim()
+      if (!googleDisplayName || googleDisplayName.length < 2) {
+        setGoogleNameRequired(true)
+        return
+      }
+      await saveUserProfile(credential.user.uid, googleDisplayName)
       await recordLegalAcceptance(credential.user.uid, LEGAL_VERSION)
       onSuccess()
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : ""
-      setError(code.includes("popup-closed-by-user") ? "Google sign-in was cancelled." : "Google sign-in failed. Try again.")
+      setError(
+        code.includes("popup-closed-by-user")
+          ? "Google sign-in was cancelled."
+          : "Google sign-in failed. Try again.",
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveGoogleName = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const name = displayName.trim()
+    if (name.length < 2) {
+      setError("Choose a display name with at least 2 characters.")
+      return
+    }
+    const currentUser = auth.currentUser
+    if (!currentUser) {
+      setError("Your Google sign-in session expired. Please sign in again.")
+      setGoogleNameRequired(false)
+      return
+    }
+    setBusy(true)
+    setError("")
+    try {
+      await saveUserProfile(currentUser.uid, name)
+      await recordLegalAcceptance(currentUser.uid, LEGAL_VERSION)
+      onSuccess()
+    } catch {
+      setError(
+        "Your display name couldn't be saved. Check your connection and retry.",
+      )
     } finally {
       setBusy(false)
     }
@@ -199,9 +254,7 @@ export default function AuthPage({
         </button>
       </header>
       <main className="page-enter mx-auto flex max-w-md flex-col px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
-        <p className={`eyebrow ${muted}`}>
-          your datecue account
-        </p>
+        <p className={`eyebrow ${muted}`}>your datecue account</p>
         <h1 className="mt-5 text-5xl leading-[.95] sm:text-6xl">
           Keep the night going.
         </h1>
@@ -210,11 +263,57 @@ export default function AuthPage({
             ? "Sign in to return to your rooms and pick up where you left off."
             : "Create an account to save rooms and keep your watch history close."}
         </p>
+        {googleNameRequired && (
+          <form
+            className="soft-card mt-8 rounded-[28px] p-6 sm:p-9"
+            onSubmit={(event) => void saveGoogleName(event)}
+          >
+            <p className="eyebrow text-coral">One small thing</p>
+            <h2 className="mt-2 text-3xl">What should people call you?</h2>
+            <p className={`mt-2 text-sm leading-relaxed ${muted}`}>
+              Your name appears beside messages and in room presence.
+            </p>
+            <label
+              className={`mb-2 mt-5 block text-xs font-bold uppercase tracking-[.16em] ${muted}`}
+              htmlFor="google-display-name"
+            >
+              Display name
+            </label>
+            <input
+              autoComplete="nickname"
+              autoFocus
+              className="input-field focus-ring rounded-xl px-4 py-3.5 text-sm"
+              id="google-display-name"
+              maxLength={40}
+              minLength={2}
+              onChange={(event) => setDisplayName(event.target.value)}
+              required
+              value={displayName}
+            />
+            {error && (
+              <p className="mt-4 text-sm text-coral" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="button-primary focus-ring mt-5 w-full rounded-xl px-5 py-4 text-sm font-bold"
+              disabled={busy}
+              type="submit"
+            >
+              {busy ? "Saving…" : "Save name and continue"}
+            </button>
+          </form>
+        )}
         <form
           className="soft-card mt-9 rounded-[28px] p-6 sm:p-9"
           onSubmit={submit}
+          hidden={googleNameRequired}
         >
-          <div className="mb-7 flex gap-1 border-b hairline" role="tablist" aria-label="Account access">
+          <div
+            className="mb-7 flex gap-1 border-b hairline"
+            role="tablist"
+            aria-label="Account access"
+          >
             {(["login", "signup"] as const).map((item) => (
               <button
                 className={`focus-ring relative -mb-px px-4 pb-4 pt-1 text-sm font-bold capitalize ${
@@ -246,11 +345,27 @@ export default function AuthPage({
               type="checkbox"
             />
             <div>
-              <label htmlFor="accept-legal">I agree to the Terms of Service and acknowledge the Privacy Policy.</label>
+              <label htmlFor="accept-legal">
+                I agree to the Terms of Service and acknowledge the Privacy
+                Policy.
+              </label>
               <p className="mt-1">
-              <button className="text-coral underline underline-offset-2" onClick={() => onLegal("terms")} type="button">Terms of Service</button>
-              {" · "}
-              <button className="text-coral underline underline-offset-2" onClick={() => onLegal("privacy")} type="button">Privacy Policy</button>.
+                <button
+                  className="text-coral underline underline-offset-2"
+                  onClick={() => onLegal("terms")}
+                  type="button"
+                >
+                  Terms of Service
+                </button>
+                {" · "}
+                <button
+                  className="text-coral underline underline-offset-2"
+                  onClick={() => onLegal("privacy")}
+                  type="button"
+                >
+                  Privacy Policy
+                </button>
+                .
               </p>
             </div>
           </div>
@@ -328,12 +443,29 @@ export default function AuthPage({
             value={password}
           />
           {verificationRequired && (
-            <div className="mt-4 space-y-3 rounded-xl bg-moss/10 px-3 py-3 text-sm text-moss" role="status">
-              <p>{verificationSent ? "We sent a verification link. Verify your email before continuing." : "Verify your email before continuing."}</p>
-              <button className="button-primary focus-ring w-full rounded-lg px-3 py-2 font-bold" disabled={busy} onClick={() => void checkVerification()} type="button">
+            <div
+              className="mt-4 space-y-3 rounded-xl bg-moss/10 px-3 py-3 text-sm text-moss"
+              role="status"
+            >
+              <p>
+                {verificationSent
+                  ? "We sent a verification link. Verify your email before continuing."
+                  : "Verify your email before continuing."}
+              </p>
+              <button
+                className="button-primary focus-ring w-full rounded-lg px-3 py-2 font-bold"
+                disabled={busy}
+                onClick={() => void checkVerification()}
+                type="button"
+              >
                 {busy ? "Checking…" : "I've verified my email"}
               </button>
-              <button className="focus-ring w-full rounded-lg border border-current px-3 py-2 font-bold" disabled={busy} onClick={() => void resendVerification()} type="button">
+              <button
+                className="focus-ring w-full rounded-lg border border-current px-3 py-2 font-bold"
+                disabled={busy}
+                onClick={() => void resendVerification()}
+                type="button"
+              >
                 Resend verification link
               </button>
             </div>
@@ -347,15 +479,6 @@ export default function AuthPage({
             </p>
           )}
           <button
-            className="button-quiet focus-ring flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3.5 text-sm font-bold"
-            disabled={busy}
-            onClick={() => void signInWithGoogle()}
-            type="button"
-          >
-            Continue with Google
-          </button>
-          <div className={`my-4 flex items-center gap-3 text-xs ${muted}`}><span className="h-px flex-1 bg-current opacity-20" />or<span className="h-px flex-1 bg-current opacity-20" /></div>
-          <button
             className="button-primary focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-bold"
             disabled={busy}
             type="submit"
@@ -368,6 +491,48 @@ export default function AuthPage({
             <Icon name="arrow-right" size={16} />
           </button>
         </form>
+        {!googleNameRequired && (
+          <div className="mt-9">
+            <div className={`flex items-center gap-4 text-xs ${muted}`}>
+              <span className="h-px flex-1 bg-current opacity-20" />
+              or continue another way
+              <span className="h-px flex-1 bg-current opacity-20" />
+            </div>
+            <button
+              className="google-signin-button focus-ring mt-5 flex w-full items-center justify-center gap-3 rounded-2xl border px-5 py-4 text-sm font-bold shadow-lg"
+              disabled={busy}
+              onClick={() => void signInWithGoogle()}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                className="google-signin-icon h-5 w-5 shrink-0"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.15v2.84A11 11 0 0 0 12 23Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.15a11 11 0 0 0 0 9.88l3.69-2.84Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.36c1.62 0 3.06.56 4.21 1.64l3.15-3.15A10.53 10.53 0 0 0 12 0 11 11 0 0 0 2.15 7.06l3.69 2.84C6.71 7.3 9.14 4.36 12 4.36Z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+            <p className={`mt-3 text-center text-xs leading-relaxed ${muted}`}>
+              A quick, secure sign-in with your Google account.
+            </p>
+          </div>
+        )}
       </main>
     </div>
   )

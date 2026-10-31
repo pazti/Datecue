@@ -69,6 +69,7 @@ h1, h2, h3, h4 {
   --surface-raised: #223237;
   --text: #f3ede3;
   --text-muted: #afbcba;
+  --color-muted-ink: #afbcba;
   color: var(--text);
   background-color: var(--surface);
 }
@@ -112,6 +113,33 @@ h1, h2, h3, h4 {
 .button-dark:hover { background: #304b50; }
 .button-quiet { color: #23343a; background: rgba(251, 247, 240, 0.56); }
 .dark .button-quiet { color: #f3ede3; background: rgba(255, 255, 255, 0.07); }
+
+.google-signin-button {
+  color: #27343a;
+  border-color: rgba(35, 52, 58, 0.14);
+  background: linear-gradient(135deg, #fff 0%, #fbf7f0 100%);
+  box-shadow: 0 10px 24px rgba(35, 52, 58, 0.09);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+.google-signin-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(66, 133, 244, 0.38);
+  box-shadow: 0 14px 30px rgba(35, 52, 58, 0.14);
+}
+.google-signin-button:active:not(:disabled) { transform: translateY(0) scale(.99); }
+.google-signin-icon { transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
+.google-signin-button:hover .google-signin-icon { transform: rotate(-8deg) scale(1.08); }
+.dark .google-signin-button {
+  color: #f3ede3;
+  border-color: rgba(243, 237, 227, 0.2);
+  background: linear-gradient(135deg, #2c4146 0%, #223237 100%);
+}
+.dark .google-signin-button:hover:not(:disabled) {
+  border-color: rgba(138, 180, 248, 0.55);
+}
 
 .liquid-glass {
   position: relative;
@@ -157,6 +185,14 @@ h1, h2, h3, h4 {
 .app-content .bg-paper { background-color: rgba(251, 247, 240, .88); }
 .dark .liquid-backdrop { opacity: .42; }
 @media (prefers-reduced-motion: reduce) { .liquid-backdrop { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 .soft-card {
   border: 1px solid var(--line);

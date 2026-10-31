@@ -6,6 +6,7 @@ interface Props {
   onClose: () => void
   closeOnEscape?: boolean
   closeOnBackdropClick?: boolean
+  dialogClassName?: string
 }
 
 const FOCUSABLE = [
@@ -23,6 +24,7 @@ export default function AccessibleDialog({
   onClose,
   closeOnEscape = true,
   closeOnBackdropClick = true,
+  dialogClassName = "soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl",
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null)
   const onCloseRef = useRef(onClose)
@@ -62,10 +64,17 @@ export default function AccessibleDialog({
 
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
+      const activeElement = document.activeElement
+      if (
+        event.shiftKey &&
+        (activeElement === first || !dialogRef.current.contains(activeElement))
+      ) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (
+        !event.shiftKey &&
+        (activeElement === last || !dialogRef.current.contains(activeElement))
+      ) {
         event.preventDefault()
         first.focus()
       }
@@ -93,7 +102,7 @@ export default function AccessibleDialog({
         ref={dialogRef}
         aria-labelledby={labelledBy}
         aria-modal="true"
-        className="soft-card w-full max-w-md rounded-3xl p-6 shadow-2xl"
+        className={dialogClassName}
         role="dialog"
         tabIndex={-1}
       >

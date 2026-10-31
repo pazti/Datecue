@@ -1,10 +1,12 @@
 import { Icon } from "../components/Logo"
 
 export type LegalDocument = "privacy" | "terms"
-export const LEGAL_VERSION = "2026-10-26"
+export const LEGAL_VERSION = "2026-10-31"
 
 interface Props {
   document: LegalDocument
+  darkMode: boolean
+  onToggleDark: () => void
   onBack: () => void
   onNavigate: (document: LegalDocument) => void
 }
@@ -12,7 +14,7 @@ interface Props {
 const DOCUMENTS = {
   privacy: {
     title: "Privacy Policy",
-    updated: "October 26, 2026",
+    updated: "October 31, 2026",
     intro:
       "This policy explains what Datecue collects and how it is used when you create an account, join a room, or watch together. Datecue is a shared viewing tool, not a dating service, and it does not verify anyone's identity or relationship.",
     sections: [
@@ -33,21 +35,21 @@ const DOCUMENTS = {
       {
         title: "Service providers and YouTube",
         paragraphs: [
-          "Datecue uses Firebase Authentication and Realtime Database. YouTube videos are embedded using YouTube's player and metadata services. Those providers may receive technical information such as your IP address, browser details, and player activity under their own privacy terms and settings.",
+          "Datecue uses Firebase Authentication, Realtime Database, and (when browser alerts are enabled) Firebase Cloud Messaging. YouTube videos are embedded using YouTube's player and metadata services. Those providers may receive technical information such as your IP address, browser details, and player activity under their own privacy terms and settings. Browser notification tokens are stored with your account so notifications can be delivered to devices you enable.",
           "Datecue does not host the videos. Opening or playing a video is also subject to YouTube's terms and privacy policy.",
         ],
       },
       {
         title: "Retention and security",
         paragraphs: [
-          "Room data is removed when the host ends a room or when scheduled cleanup removes a room after approximately 48 hours without activity. Cleanup runs daily, so removal may take up to about 24 hours longer. Account profile, watch history, statistics, and notifications remain stored until removed by the service operator; Datecue currently has no in-app account-deletion control.",
+          "Room data is removed when the host ends a room or when scheduled cleanup removes a room after approximately 48 hours without activity. Cleanup runs daily, so removal may take up to about 24 hours longer. Account profile, watch history, statistics, and notifications remain stored until you delete your account or the service operator removes them.",
           "Firebase Authentication and database rules restrict access to verified accounts and room members. Room chat and playback data are not end-to-end encrypted. No online service can guarantee absolute security.",
         ],
       },
       {
         title: "Your choices",
         paragraphs: [
-          "You can choose what to include in your display name and messages, leave rooms, clear notifications, and avoid sharing room links. Datecue currently has no in-app control for exporting or deleting account history. The service operator's privacy contact must be published before public launch so you can make access or deletion requests.",
+          "You can choose what to include in your display name and messages, leave rooms, clear notifications, turn off browser alerts, download a JSON copy of your account data, or delete your account from your profile. Account deletion removes your profile, history, statistics, notifications, and rooms you host. The service operator's privacy contact must be published before public launch so you can make other access requests.",
         ],
       },
       {
@@ -60,7 +62,7 @@ const DOCUMENTS = {
   },
   terms: {
     title: "Terms of Service",
-    updated: "October 26, 2026",
+    updated: "October 31, 2026",
     intro:
       "These terms cover your use of Datecue, a service for watching third-party YouTube videos together in private, two-person rooms. By using Datecue, you agree to these terms and the applicable YouTube terms for embedded videos.",
     sections: [
@@ -89,7 +91,7 @@ const DOCUMENTS = {
         title: "Availability and termination",
         paragraphs: [
           "Datecue is provided on an evolving basis and may change, be interrupted, or be discontinued. The host may end a room at any time. The service operator may suspend access for misuse, security reasons, or legal requirements.",
-          "You may stop using Datecue at any time. Ending a room removes its live room data; it does not automatically remove watch history, statistics, or notifications already saved to an account.",
+          "You may stop using Datecue at any time. Ending a room removes its live room data; it does not automatically remove watch history, statistics, or notifications already saved to an account. You can delete your account from your profile to remove those saved details and close rooms you host.",
         ],
       },
       {
@@ -109,13 +111,23 @@ const DOCUMENTS = {
   },
 } as const
 
-export default function LegalPage({ document, onBack, onNavigate }: Props) {
+export default function LegalPage({
+  document,
+  darkMode,
+  onToggleDark,
+  onBack,
+  onNavigate,
+}: Props) {
   const page = DOCUMENTS[document]
   const otherDocument = document === "privacy" ? "terms" : "privacy"
 
   return (
-    <main className="film-grain surface-wash min-h-[100dvh] bg-ivory text-ink">
-      <header className="sticky top-0 z-20 border-b hairline bg-ivory/90 px-5 py-4 backdrop-blur-xl sm:px-8">
+    <main
+      className={`film-grain surface-wash min-h-[100dvh] ${
+        darkMode ? "bg-night text-ivory" : "bg-ivory text-ink"
+      }`}
+    >
+      <header className="sticky top-0 z-20 border-b hairline bg-ivory/90 px-5 py-4 backdrop-blur-xl dark:bg-night/90 sm:px-8">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <button
             className="button-quiet focus-ring flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold"
@@ -124,32 +136,73 @@ export default function LegalPage({ document, onBack, onNavigate }: Props) {
           >
             <Icon name="arrow-left" size={16} /> Back
           </button>
-          <nav aria-label="Legal documents" className="flex items-center gap-4 text-sm">
-            <button className="focus-ring underline underline-offset-4" onClick={() => onNavigate("privacy")} type="button">Privacy</button>
-            <button className="focus-ring underline underline-offset-4" onClick={() => onNavigate("terms")} type="button">Terms</button>
+          <nav
+            aria-label="Legal documents"
+            className="flex items-center gap-4 text-sm"
+          >
+            <button
+              className="focus-ring underline underline-offset-4"
+              onClick={() => onNavigate("privacy")}
+              type="button"
+            >
+              Privacy
+            </button>
+            <button
+              className="focus-ring underline underline-offset-4"
+              onClick={() => onNavigate("terms")}
+              type="button"
+            >
+              Terms
+            </button>
           </nav>
+          <button
+            aria-label={
+              darkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
+            className="button-quiet focus-ring flex h-10 w-10 items-center justify-center rounded-full border"
+            onClick={onToggleDark}
+            type="button"
+          >
+            <Icon name={darkMode ? "sun" : "moon"} size={16} />
+          </button>
         </div>
       </header>
       <article className="page-enter mx-auto max-w-3xl px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
         <p className="eyebrow text-coral">Datecue / Legal</p>
-        <h1 className="mt-4 text-5xl leading-[.95] sm:text-7xl">{page.title}</h1>
-        <p className="mt-4 text-sm text-muted-ink">Effective date: {page.updated}</p>
+        <h1 className="mt-4 text-5xl leading-[.95] sm:text-7xl">
+          {page.title}
+        </h1>
+        <p className="mt-4 text-sm text-muted-ink">
+          Effective date: {page.updated}
+        </p>
         <p className="mt-8 max-w-2xl text-lg leading-relaxed">{page.intro}</p>
         <div className="mt-12 space-y-12 border-t hairline pt-8 sm:mt-16 sm:space-y-14">
           {page.sections.map((section) => (
             <section key={section.title}>
               <h2 className="text-2xl">{section.title}</h2>
               {section.paragraphs.map((paragraph) => (
-                <p className="mt-3 leading-relaxed text-muted-ink" key={paragraph}>{paragraph}</p>
+                <p
+                  className="mt-3 leading-relaxed text-muted-ink"
+                  key={paragraph}
+                >
+                  {paragraph}
+                </p>
               ))}
             </section>
           ))}
         </div>
         <p className="mt-12 border-t hairline pt-6 text-sm text-muted-ink">
-          Also read the {" "}
-          <button className="text-coral underline underline-offset-2" onClick={() => onNavigate(otherDocument)} type="button">
-            {otherDocument === "privacy" ? "Privacy Policy" : "Terms of Service"}
-          </button>.
+          Also read the{" "}
+          <button
+            className="text-coral underline underline-offset-2"
+            onClick={() => onNavigate(otherDocument)}
+            type="button"
+          >
+            {otherDocument === "privacy"
+              ? "Privacy Policy"
+              : "Terms of Service"}
+          </button>
+          .
         </p>
       </article>
     </main>

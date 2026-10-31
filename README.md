@@ -30,7 +30,9 @@ pnpm preview
 - **Create / join room** — a two-mode flow for pasting a YouTube URL or entering a room code. Invite links preserve the room code through sign-in.
 - **Watch room** — synchronized playback, live presence, chat, timestamps, and reactions.
 - **Home** — saved rooms, total watch time, and manageable notifications.
-- **Theme toggle** — light and dark presentation modes are available across all screens.
+- **Profile** — manage your room identity, review private watch history, export account data, or delete your account.
+- **Theme toggle** — light and dark presentation modes persist across screens and visits.
+- **Browser notifications** — opt-in push alerts for room updates, delivered by Firebase Cloud Messaging.
 
 ## Firebase setup
 
@@ -46,7 +48,9 @@ firebase deploy --only hosting,database,functions
 
 The Firebase CLI must be authenticated and pointed at the intended project. Scheduled functions require the appropriate Firebase billing plan and Cloud Scheduler/Functions APIs. The Firebase web API key is client configuration, not a server secret; restrict it in Firebase/Google Cloud settings as appropriate.
 
-The privacy and terms pages are an implementation draft. Add the service operator's legal name, privacy contact, and applicable jurisdiction before public launch; Datecue currently has no in-app account deletion or data-export control.
+For browser notifications, enable Firebase Cloud Messaging, add the project's web push certificate public key as `VITE_FIREBASE_VAPID_KEY`, and deploy the database rules and `sendBrowserNotification` function. Users must opt in from Home. Account deletion uses the `deleteAccountData` callable function and also requires deployment.
+
+The privacy and terms pages are an implementation draft. Add the service operator's legal name, privacy contact, and applicable jurisdiction before public launch.
 
 ## Project structure
 
@@ -57,10 +61,11 @@ src/
   pages/LegalPage.tsx       # Privacy Policy and Terms of Service
   pages/CreateRoom.tsx      # Create and join flow
   pages/WatchRoom.tsx       # Watch party experience
-  App.tsx                   # Screen-level navigation and theme state
+  pages/ProfilePage.tsx     # Private profile and account controls
+  App.tsx                   # Screen-level navigation and persisted theme state
   index.css                 # Shared design tokens and global styles
 functions/
-  index.js                  # Scheduled cleanup of inactive room data
+  index.js                  # Room cleanup, account deletion, and push delivery
 ```
 
 ## Design direction
