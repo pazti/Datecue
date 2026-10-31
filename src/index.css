@@ -263,12 +263,18 @@ html.large-chat .room-chat-content {
   from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes rise {
-  from { opacity: 0; transform: translateY(20px) scale(.94); }
-  to { opacity: 1; transform: translateY(-130px) scale(1); }
+@keyframes reaction-burst {
+  0% { opacity: 0; transform: translate(-50%, 24px) scale(.35) rotate(-15deg); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1.65) rotate(8deg); }
+  22% { transform: translate(-50%, -5px) scale(.86) rotate(-5deg); }
+  34% { opacity: 1; transform: translate(-50%, -8px) scale(1.05) rotate(2deg); }
+  100% { opacity: 0; transform: translate(-50%, -150px) scale(.65) rotate(16deg); }
 }
 .landing-phone { animation: none; }
-.reaction-rise { animation: rise 650ms ease-out forwards; }
+.reaction-rise {
+  animation: reaction-burst 1.8s cubic-bezier(.2,.7,.25,1) forwards;
+  transform-origin: center;
+}
 
 .movie-surface {
   background:

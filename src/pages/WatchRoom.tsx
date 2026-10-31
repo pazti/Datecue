@@ -1577,7 +1577,7 @@ export default function WatchRoom({
           {latestReactions.map((reaction) => (
             <span
               key={reaction.id}
-              className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 z-40 text-5xl drop-shadow-lg"
+              className="reaction-rise pointer-events-none absolute bottom-24 left-1/2 z-40 text-5xl drop-shadow-lg"
               aria-hidden="true"
             >
               {REACTIONS.includes(reaction.emoji) ? reaction.emoji : "✨"}
