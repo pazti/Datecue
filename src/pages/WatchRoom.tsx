@@ -1077,24 +1077,33 @@ export default function WatchRoom({
               </button>
             </div>
           )}
-          <div className="absolute bottom-4 right-4 z-10">
+          <div
+            className={`absolute right-4 z-50 ${
+              showReactions ? "bottom-20" : "bottom-4"
+            }`}
+          >
             {showReactions ? (
-              <div className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-[#25292d]/95 p-1.5 shadow-2xl backdrop-blur-md">
+              <div
+                aria-label="Choose a reaction"
+                className="reaction-tray no-scrollbar flex max-w-[calc(100vw-2rem)] items-center gap-1.5 overflow-x-auto rounded-full border border-white/15 bg-[#172327]/95 p-2 shadow-2xl backdrop-blur-md"
+                role="group"
+              >
                 {REACTIONS.map((reaction) => (
                   <button
                     key={reaction}
                     aria-label={`React: ${REACTION_LABELS[reaction]}`}
+                    title={REACTION_LABELS[reaction]}
                     onClick={() => void sendReaction(reaction)}
-                    className="focus-ring shrink-0 rounded-full px-3 py-2 text-xs font-semibold text-white/90 transition hover:bg-white/10"
+                    className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl leading-none transition hover:scale-110 hover:bg-white/20 active:scale-95"
                     type="button"
                   >
-                    {REACTION_LABELS[reaction]}
+                    <span aria-hidden="true">{reaction}</span>
                   </button>
                 ))}
                 <button
                   aria-label="Close reactions"
                   onClick={() => setShowReactions(false)}
-                  className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/80"
+                  className="focus-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-xl text-white/90 transition hover:bg-white/25"
                   type="button"
                 >
                   ×
@@ -1114,10 +1123,12 @@ export default function WatchRoom({
           {latestReactions.map((reaction) => (
             <span
               key={reaction.id}
-              className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 text-3xl"
+              className="reaction-rise pointer-events-none absolute bottom-24 right-1/2 z-40 text-5xl drop-shadow-lg"
               aria-hidden="true"
             >
-              {REACTION_LABELS[reaction.emoji] || "Reaction"}
+              {REACTIONS.includes(reaction.emoji)
+                ? reaction.emoji
+                : "✨"}
             </span>
           ))}
           {roomEnded && (
