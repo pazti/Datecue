@@ -36,7 +36,9 @@ pnpm preview
 
 ## Firebase setup
 
-Firebase web configuration is read from `VITE_FIREBASE_*` environment variables. The repository includes fallback values for the Firebase project used by the original import; set all configuration values for your own Firebase project before deploying a fork.
+Firebase web configuration is read from `VITE_FIREBASE_*` environment variables. Copy [`.env.example`](./.env.example) to `.env` for local development. The example contains the original project's client configuration (not server credentials); replace it with your own project's values before deploying a fork.
+
+On Vercel, add the complete Firebase web configuration to the project's Environment Variables for every deployment environment you use. `VITE_FIREBASE_MEASUREMENT_ID` is optional; without it, Analytics is disabled. A deployment with no custom Firebase variables uses the original Datecue Firebase project. If you configure a custom project, the build checks that all required Firebase variables are present and fails with the missing names instead of deploying a blank page.
 
 Enable Email/Password and Google authentication, Realtime Database, and Firebase Analytics in that Firebase project. Room access rules are in [`database.rules.json`](./database.rules.json), referenced by [`firebase.json`](./firebase.json). They require verified accounts, permit at most two room members, reject joins to stale or cleanup-pending rooms, and restrict host-only room operations.
 

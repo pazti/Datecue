@@ -1,4 +1,9 @@
-import { defineConfig, type HtmlTagDescriptor, type Plugin } from "vite"
+import {
+  defineConfig,
+  loadEnv,
+  type HtmlTagDescriptor,
+  type Plugin,
+} from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
@@ -7,6 +12,28 @@ import siteConfiguration from "./.figma/make/site.json"
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  const firebaseEnvironment = loadEnv(mode, process.cwd(), "VITE_FIREBASE_")
+  const firebaseKeys = [
+    "VITE_FIREBASE_API_KEY",
+    "VITE_FIREBASE_AUTH_DOMAIN",
+    "VITE_FIREBASE_DATABASE_URL",
+    "VITE_FIREBASE_PROJECT_ID",
+    "VITE_FIREBASE_STORAGE_BUCKET",
+    "VITE_FIREBASE_MESSAGING_SENDER_ID",
+    "VITE_FIREBASE_APP_ID",
+  ]
+  const hasCustomFirebaseConfig = firebaseKeys.some((key) =>
+    firebaseEnvironment[key]?.trim(),
+  )
+  const missingFirebaseKeys = firebaseKeys.filter(
+    (key) => !firebaseEnvironment[key]?.trim(),
+  )
+  if (hasCustomFirebaseConfig && missingFirebaseKeys.length > 0) {
+    throw new Error(
+      `Incomplete Firebase configuration. Set all required variables or remove the partial configuration to use the original Datecue project: ${missingFirebaseKeys.join(", ")}`,
+    )
+  }
+
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === "development"
 

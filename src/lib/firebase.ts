@@ -20,26 +20,9 @@ const firebaseEnvironment = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 }
-const firebaseEnvironmentIsComplete = Object.values(firebaseEnvironment).every(
-  (value) => typeof value === "string" && value.trim().length > 0,
-)
-
-if (import.meta.env.PROD && !firebaseEnvironmentIsComplete) {
-  const missingKeys = Object.entries(firebaseEnvironment)
-    .filter(([, value]) => !value?.trim())
-    .map(
-      ([key]) =>
-        `VITE_FIREBASE_${key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase()}`,
-    )
-  throw new Error(
-    `Production Firebase configuration is incomplete. Add: ${missingKeys.join(", ")}`,
-  )
-}
-
 export const firebaseConfig = {
   apiKey:
-    firebaseEnvironment.apiKey ||
-    (import.meta.env.DEV ? "AIzaSyBCZL8iwtXVZtqxD-XSm_T94f934tx7TjA" : ""),
+    firebaseEnvironment.apiKey || "AIzaSyBCZL8iwtXVZtqxD-XSm_T94f934tx7TjA",
   authDomain: firebaseEnvironment.authDomain || "datecue-e90a5.firebaseapp.com",
   databaseURL:
     firebaseEnvironment.databaseURL ||
@@ -50,7 +33,9 @@ export const firebaseConfig = {
   messagingSenderId: firebaseEnvironment.messagingSenderId || "203915148369",
   appId:
     firebaseEnvironment.appId || "1:203915148369:web:8e9e4c18d67510a6ec8c70",
-  measurementId: firebaseEnvironment.measurementId || "G-MZCHWXTXHT",
+  measurementId:
+    firebaseEnvironment.measurementId ||
+    (firebaseEnvironment.projectId ? "" : "G-MZCHWXTXHT"),
 }
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
@@ -78,6 +63,7 @@ export async function trackAnalyticsEvent(
   eventName: string,
   params: Record<string, string | number | boolean> = {},
 ) {
+  if (!firebaseConfig.measurementId) return
   analyticsInstance ??= import("firebase/analytics")
     .then(({ getAnalytics, isSupported }) =>
       isSupported().then((supported) => (supported ? getAnalytics(app) : null)),
