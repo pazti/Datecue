@@ -111,11 +111,12 @@
           ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           ".indexOn": ["createdAt"],
           "$reactionId": {
-            ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid) && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid))",
+            ".write": "auth != null && auth.token.email_verified == true && ((!data.exists() && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid) && newData.child('uid').val() == auth.uid) || (data.exists() && !newData.exists() && data.child('uid').val() == auth.uid) || (!data.exists() && !newData.exists() && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid)))",
             ".validate": "newData.hasChildren(['uid', 'emoji', 'createdAt']) && newData.child('uid').val() == auth.uid && newData.child('emoji').isString() && (newData.child('emoji').val() == '👍' || newData.child('emoji').val() == '❤️' || newData.child('emoji').val() == '😂' || newData.child('emoji').val() == '😮' || newData.child('emoji').val() == '😢' || newData.child('emoji').val() == '🙏' || newData.child('emoji').val() == '👋') && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 60000"
           }
         },
         "typing": {
+          ".read": "auth != null && auth.token.email_verified == true && (data.parent().child('hostId').val() == auth.uid || data.parent().child('guestSeat').val() == auth.uid)",
           "$uid": {
             ".write": "auth != null && auth.token.email_verified == true && $uid == auth.uid && (data.parent().parent().child('hostId').val() == auth.uid || data.parent().parent().child('guestSeat').val() == auth.uid)",
             ".validate": "newData.isBoolean()"

@@ -299,7 +299,9 @@ export default function WatchRoom({
         setShowNamePrompt(!name)
       })
       .catch(() => {
-        setRoomError("Your room profile couldn't load. Check your connection and try again.")
+        setRoomError(
+          "Your room profile couldn't load. Check your connection and try again.",
+        )
         setShowNamePrompt(true)
       })
   }, [userId])
@@ -353,7 +355,9 @@ export default function WatchRoom({
       displayName,
       bio: profileBio,
     }).catch(() => {
-      setRoomError("Your room profile couldn't sync. Check the room rules and retry.")
+      setRoomError(
+        "Your room profile couldn't sync. Check the room rules and retry.",
+      )
     })
   }, [displayName, profileBio, roomId, userId])
 
@@ -400,10 +404,14 @@ export default function WatchRoom({
       orderByChild("createdAt"),
       limitToLast(MAX_VISIBLE_REACTIONS),
     )
-    const fail = () =>
+    const fail = (error: Error) => {
+      const code = error.message.toUpperCase()
       setRoomError(
-        "Room updates are unavailable. Check the Firebase rules and try again.",
+        code.includes("PERMISSION_DENIED")
+          ? "Firebase denied access to room updates. Deploy the latest database.rules.json and confirm your account is verified and joined to this room."
+          : "Room updates are unavailable. Check your connection and Firebase setup, then try again.",
       )
+    }
 
     void set(presenceRef, {
       online: true,
@@ -756,9 +764,12 @@ export default function WatchRoom({
           )
         })
       }, REACTION_LIFETIME_MS)
-    } catch {
+    } catch (error) {
+      const code = error instanceof Error ? error.message.toUpperCase() : ""
       setSendError(
-        "Reaction failed to send. Check your connection and try again.",
+        code.includes("PERMISSION_DENIED")
+          ? "Firebase denied this reaction. Deploy the latest database.rules.json and confirm your account is verified and joined to this room."
+          : "Reaction failed to send. Check your connection and try again.",
       )
     }
   }
